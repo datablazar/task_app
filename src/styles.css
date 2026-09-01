@@ -880,11 +880,111 @@ label[for]:focus-within {
 
 .task-badge {
   align-self: flex-start;
-  margin-left: 36px;
   padding: 2px 8px;
   border-radius: 12px;
   background: #eef2ff;
   color: #08218f;
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+.task-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 36px;
+}
+
+.task-constraint-badge {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.task-edit-btn {
+  padding: 1px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.task-edit-btn:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Subtasks */
+.subtasks-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 28px;
+  padding-left: 10px;
+  border-left: 2px solid #e2e8f0;
+}
+
+.subtask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subtask-item .task-row {
+  min-height: 40px;
+  padding: 6px 10px;
+  font-size: 0.88rem;
+  background: #fbfcfd;
+}
+
+.add-subtask-toggle {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.add-subtask-toggle:hover {
+  color: #08218f;
+}
+
+.subtask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.subtask-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.subtask-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

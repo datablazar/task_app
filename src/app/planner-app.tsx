@@ -103,11 +103,13 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           tasks={planner.document.tasks}
         />
         <TaskPanel
+          onCreateSubtask={planner.createSubtask}
           onCreateTask={planner.createTask}
           onExport={exportBackup}
           onImport={importBackup}
           onSelectTaskId={setSelectedTaskId}
           onSetTaskCompletion={planner.setTaskCompletion}
+          onUpdateTaskConstraints={planner.updateTaskConstraints}
           project={selectedProject}
           selectedTaskId={selectedTaskId}
           taskSessions={planner.document.taskSessions}

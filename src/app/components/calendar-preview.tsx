@@ -74,7 +74,11 @@ export const CalendarPreview = ({
 
     if (scheduleMode === 'task') {
       if (!chosenTaskId) return
-      if (onScheduleTaskSession(chosenTaskId, activeSlot.startAt, activeSlot.endAt)) {
+      const targetTask = taskLookup.get(chosenTaskId)
+      const durationMinutes = targetTask?.estimateMinutes ?? 60
+      const startMs = Date.parse(activeSlot.startAt)
+      const endAt = new Date(startMs + durationMinutes * 60 * 1000).toISOString()
+      if (onScheduleTaskSession(chosenTaskId, activeSlot.startAt, endAt)) {
         closeSlotDialog()
       }
     } else {

@@ -6,10 +6,10 @@
 
 | Item | Current truth |
 |---|---|
-| State | Milestone I1 in progress; calendar sessions and fixed events delivered. |
-| Active milestone | **I1 — Manual planner** |
-| Next bounded outcome | Task hierarchy (subtasks) and task constraints (duration, deadlines). |
-| Evidence required | Subtask/constraint domain commands; hierarchy tests; task panel interactions. |
+| State | Milestone I1 complete; preparing Milestone I2 (Reference planner). |
+| Active milestone | **I2 — Reference planner** |
+| Next bounded outcome | Working/protected availability windows and cycle-safe dependency graph. |
+| Evidence required | Dependency cycle rejection, availability invariants, deterministic planner core tests. |
 | Blocker | None. |
 | Last verified | 2026-09-01 |
 
@@ -66,8 +66,8 @@ The product should feel calm, quick and trustworthy: dominant day/week calendar,
 | Phase | Smallest outcome | Exit evidence |
 |---|---|---|
 | **I0 — Foundation** | Typed application base; local repository; versioned export/import; project/task vertical slice. | Exact data round trip; safe invalid import; build and relevant tests. (Completed) |
-| **I1 Now — Manual planner** | Hierarchy, constraints, fixed events and manual calendar sessions. | A persistent offline week; accessible core journeys. |
-| **I2 — Reference planner** | Availability, cycle-safe dependencies, allocation, risks, revisions and Undo. | Invariants, determinism, rejected invalid graphs, factual replan and exact Undo. |
+| **I1 — Manual planner** | Hierarchy, constraints, fixed events and manual calendar sessions. | A persistent offline week; accessible core journeys. (Completed) |
+| **I2 Now — Reference planner** | Availability, cycle-safe dependencies, allocation, risks, revisions and Undo. | Invariants, determinism, rejected invalid graphs, factual replan and exact Undo. |
 | **I3 — Planning quality** | Stability, load balance, missed work and policy presets. | Golden cases improve without correctness loss; interactive representative workload. |
 | **I4 — Optional interpretation** | Four bounded capabilities, confirmation, provenance, limits and evaluation. | Feature can fail/disable safely; each capability independently passes measured quality, privacy, reliability, latency and cost. |
 | **I5 — Daily product** | Installable offline product, responsive Today/capture and robust recovery. | Offline use, clear tested backup/restore and narrow-screen core flow. |

@@ -82,6 +82,56 @@ export const usePlanner = ({
     [createId, document, now, workspace],
   )
 
+  const createSubtask = useCallback(
+    (projectId: string, parentTaskId: string, title: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'create-subtask',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        projectId,
+        parentTaskId,
+        title,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Saved locally.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const updateTaskConstraints = useCallback(
+    (
+      taskId: string,
+      constraints: {
+        estimateMinutes?: number
+        dueAt?: string
+        earliestStartAt?: string
+      },
+    ): boolean => {
+      const result = workspace.execute(document, {
+        type: 'update-task-constraints',
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        ...constraints,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Task updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
   const setTaskCompletion = useCallback(
     (taskId: string, completed: boolean): void => {
       const result = workspace.execute(document, {
@@ -215,6 +265,7 @@ export const usePlanner = ({
   return {
     createFixedEvent,
     createProject,
+    createSubtask,
     createTask,
     createTaskSession,
     deleteFixedEvent,
@@ -224,5 +275,6 @@ export const usePlanner = ({
     notice,
     restore,
     setTaskCompletion,
+    updateTaskConstraints,
   }
 }

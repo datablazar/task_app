@@ -103,4 +103,61 @@ describe('PlannerApp', () => {
     expect(saved).toContain('taskSessions')
     expect(saved).toContain('Read paper')
   })
+
+  it('supports adding subtasks and updating task constraints', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let identifier = 0
+
+    render(
+      <PlannerApp
+        createId={() => {
+          identifier += 1
+          return `id-${identifier}`
+        }}
+        now={() => new Date('2026-09-01T09:00:00.000Z')}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    await user.type(screen.getByLabelText('Project name'), 'Thesis Writing')
+    await user.keyboard('{Enter}')
+
+    // Add main task
+    await user.type(
+      screen.getByLabelText('Add a task to Thesis Writing'),
+      'Chapter 1',
+    )
+    await user.keyboard('{Enter}')
+
+    // Edit constraints for Chapter 1
+    const editBtn = screen.getByRole('button', { name: /edit constraints for chapter 1/i })
+    await user.click(editBtn)
+
+    const durationInput = screen.getByLabelText(/estimated duration/i)
+    await user.type(durationInput, '45')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // Expect constraint badge to appear
+    expect(screen.getByText('⏱ 45m')).toBeVisible()
+
+    // Add a subtask
+    const addSubtaskBtn = screen.getByRole('button', { name: /\+ add subtask/i })
+    await user.click(addSubtaskBtn)
+
+    const subtaskInput = screen.getByPlaceholderText('Add a subtask')
+    await user.type(subtaskInput, 'Introduction Section')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    // Expect subtask to appear
+    expect(screen.getByText('Introduction Section')).toBeVisible()
+
+    // Verify persistence
+    const saved = storage.getItem('pa-planner:document:v1')
+    expect(saved).toContain('Introduction Section')
+    expect(saved).toContain('parentTaskId')
+    expect(saved).toContain('45')
+  })
 })

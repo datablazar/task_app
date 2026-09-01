@@ -53,12 +53,26 @@ export type PlannerCommand =
       type: 'delete-task-session'
       sessionId: string
     })
+  | (CommandMetadata & {
+      type: 'create-subtask'
+      projectId: string
+      parentTaskId: string
+      title: string
+    })
+  | (CommandMetadata & {
+      type: 'update-task-constraints'
+      taskId: string
+      estimateMinutes?: number
+      dueAt?: string
+      earliestStartAt?: string
+    })
 
 export interface CommandFailure {
   code:
     | 'invalid-command'
     | 'project-not-found'
     | 'task-not-found'
+    | 'parent-task-not-found'
     | 'fixed-event-not-found'
     | 'task-session-not-found'
     | 'duplicate-id'
@@ -87,6 +101,10 @@ export const executeCommand = (
       return createProject(document, command)
     case 'create-task':
       return createTask(document, command)
+    case 'create-subtask':
+      return createSubtask(document, command)
+    case 'update-task-constraints':
+      return updateTaskConstraints(document, command)
     case 'set-task-completion':
       return setTaskCompletion(document, command)
     case 'create-fixed-event':
@@ -157,6 +175,131 @@ const createTask = (
   return revised(document, command, 'task-created', `Added task “${title}”.`, {
     tasks: [...document.tasks, task],
   })
+}
+
+const createSubtask = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-subtask' }>,
+): CommandResult => {
+  const title = normaliseTitle(command.title)
+  if (!title) {
+    return invalidCommand('Subtask names must contain between 1 and 200 characters.')
+  }
+
+  if (!document.projects.some((project) => project.id === command.projectId)) {
+    return failure({
+      code: 'project-not-found',
+      message: 'Choose an existing project before adding a subtask.',
+    })
+  }
+
+  const parent = document.tasks.find((task) => task.id === command.parentTaskId)
+  if (!parent) {
+    return failure({
+      code: 'parent-task-not-found',
+      message: 'Choose an existing parent task before adding a subtask.',
+    })
+  }
+
+  if (parent.projectId !== command.projectId) {
+    return invalidCommand('Subtasks must belong to the same project as their parent task.')
+  }
+
+  if (parent.parentTaskId !== undefined) {
+    return invalidCommand('Subtasks cannot be nested under another subtask.')
+  }
+
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const subtask: Task = {
+    id: command.id,
+    projectId: command.projectId,
+    parentTaskId: command.parentTaskId,
+    title,
+    completed: false,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  return revised(
+    document,
+    command,
+    'subtask-created',
+    `Added subtask “${title}” to “${parent.title}”.`,
+    {
+      tasks: [...document.tasks, subtask],
+    },
+  )
+}
+
+const updateTaskConstraints = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'update-task-constraints' }>,
+): CommandResult => {
+  const task = document.tasks.find((candidate) => candidate.id === command.taskId)
+  if (!task) {
+    return failure({
+      code: 'task-not-found',
+      message: 'That task no longer exists.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  if (
+    command.estimateMinutes !== undefined &&
+    (!Number.isInteger(command.estimateMinutes) ||
+      command.estimateMinutes <= 0 ||
+      command.estimateMinutes > 1440)
+  ) {
+    return invalidCommand('Estimated duration must be an integer between 1 and 1440 minutes.')
+  }
+
+  if (command.dueAt !== undefined && !isUtcTimestamp(command.dueAt)) {
+    return invalidCommand('Due date must be a valid UTC timestamp.')
+  }
+
+  if (command.earliestStartAt !== undefined && !isUtcTimestamp(command.earliestStartAt)) {
+    return invalidCommand('Earliest start date must be a valid UTC timestamp.')
+  }
+
+  const effectiveEarliest =
+    command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt
+  const effectiveDue = command.dueAt !== undefined ? command.dueAt : task.dueAt
+
+  if (
+    effectiveEarliest &&
+    effectiveDue &&
+    Date.parse(effectiveEarliest) >= Date.parse(effectiveDue)
+  ) {
+    return invalidCommand('Earliest start time must be before the due date.')
+  }
+
+  const nextTask: Task = {
+    ...task,
+    estimateMinutes:
+      command.estimateMinutes !== undefined ? command.estimateMinutes : task.estimateMinutes,
+    dueAt: command.dueAt !== undefined ? command.dueAt : task.dueAt,
+    earliestStartAt:
+      command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt,
+    updatedAt: command.occurredAt,
+  }
+
+  return revised(
+    document,
+    command,
+    'task-constraints-updated',
+    `Updated constraints for task “${task.title}”.`,
+    {
+      tasks: document.tasks.map((candidate) =>
+        candidate.id === task.id ? nextTask : candidate,
+      ),
+    },
+  )
 }
 
 const setTaskCompletion = (

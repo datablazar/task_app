@@ -4,9 +4,9 @@ import type { PlannerDocument } from '../domain/model'
 import { LocalPlannerRepository, plannerStorageKey } from './local-planner-repository'
 
 const document: PlannerDocument = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   timeZone: 'Europe/London',
-  revision: 4,
+  revision: 5,
   projects: [
     {
       id: 'project-1',
@@ -21,8 +21,20 @@ const document: PlannerDocument = {
       projectId: 'project-1',
       title: 'Outline week one',
       completed: false,
+      estimateMinutes: 45,
+      dueAt: '2026-09-05T18:00:00.000Z',
       createdAt: '2026-09-01T09:01:00.000Z',
       updatedAt: '2026-09-01T09:01:00.000Z',
+    },
+    {
+      id: 'subtask-1',
+      projectId: 'project-1',
+      parentTaskId: 'task-1',
+      title: 'Draft syllabus section',
+      completed: false,
+      estimateMinutes: 20,
+      createdAt: '2026-09-01T09:02:00.000Z',
+      updatedAt: '2026-09-01T09:02:00.000Z',
     },
   ],
   fixedEvents: [
@@ -63,13 +75,20 @@ const document: PlannerDocument = {
     {
       id: 'revision-3',
       number: 3,
-      kind: 'fixed-event-created',
-      reason: 'Created fixed event “Faculty Meeting”.',
+      kind: 'subtask-created',
+      reason: 'Added subtask “Draft syllabus section”.',
       occurredAt: '2026-09-01T09:02:00.000Z',
     },
     {
       id: 'revision-4',
       number: 4,
+      kind: 'fixed-event-created',
+      reason: 'Created fixed event “Faculty Meeting”.',
+      occurredAt: '2026-09-01T09:02:00.000Z',
+    },
+    {
+      id: 'revision-5',
+      number: 5,
       kind: 'task-session-created',
       reason: 'Scheduled session for task “Outline week one”.',
       occurredAt: '2026-09-01T09:03:00.000Z',
@@ -90,7 +109,7 @@ class MemoryStorage {
 }
 
 describe('LocalPlannerRepository', () => {
-  it('round-trips a complete project, task, event, and session backup exactly', () => {
+  it('round-trips a complete project, task, subtask, event, and session backup exactly', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -106,27 +125,44 @@ describe('LocalPlannerRepository', () => {
     expect(after).toEqual(before)
   })
 
-  it('seamlessly migrates version 1 backups into version 2', () => {
+  it('seamlessly migrates version 1 and 2 backups into version 3', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
+    // Migration from v1
     const v1Raw = JSON.stringify({
       schemaVersion: 1,
       timeZone: 'Europe/London',
       revision: 2,
       projects: document.projects,
-      tasks: document.tasks,
+      tasks: [document.tasks[0]],
       revisions: document.revisions.slice(0, 2),
     })
 
-    const restored = repository.restore(v1Raw)
-    expect(restored.ok).toBe(true)
-    if (!restored.ok) throw new Error('Expected successful restore')
+    const restoredV1 = repository.restore(v1Raw)
+    expect(restoredV1.ok).toBe(true)
+    if (!restoredV1.ok) throw new Error('Expected successful restore')
+    expect(restoredV1.value.schemaVersion).toBe(3)
+    expect(restoredV1.value.fixedEvents).toEqual([])
+    expect(restoredV1.value.taskSessions).toEqual([])
 
-    expect(restored.value.schemaVersion).toBe(2)
-    expect(restored.value.fixedEvents).toEqual([])
-    expect(restored.value.taskSessions).toEqual([])
-    expect(restored.value.projects).toEqual(document.projects)
+    // Migration from v2
+    const v2Raw = JSON.stringify({
+      schemaVersion: 2,
+      timeZone: 'Europe/London',
+      revision: 4,
+      projects: document.projects,
+      tasks: [document.tasks[0]],
+      fixedEvents: document.fixedEvents,
+      taskSessions: document.taskSessions,
+      revisions: document.revisions.slice(0, 4),
+    })
+
+    const restoredV2 = repository.restore(v2Raw)
+    expect(restoredV2.ok).toBe(true)
+    if (!restoredV2.ok) throw new Error('Expected successful restore')
+    expect(restoredV2.value.schemaVersion).toBe(3)
+    expect(restoredV2.value.fixedEvents).toEqual(document.fixedEvents)
   })
 
   it('does not overwrite existing local data when an import is invalid', () => {

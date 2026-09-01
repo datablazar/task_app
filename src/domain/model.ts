@@ -1,9 +1,11 @@
-export const PLANNER_SCHEMA_VERSION = 2 as const
+export const PLANNER_SCHEMA_VERSION = 3 as const
 
 export type RevisionKind =
   | 'project-created'
   | 'task-created'
+  | 'subtask-created'
   | 'task-completion-changed'
+  | 'task-constraints-updated'
   | 'fixed-event-created'
   | 'fixed-event-deleted'
   | 'task-session-created'
@@ -19,8 +21,12 @@ export interface Project {
 export interface Task {
   id: string
   projectId: string
+  parentTaskId?: string
   title: string
   completed: boolean
+  estimateMinutes?: number
+  dueAt?: string
+  earliestStartAt?: string
   createdAt: string
   updatedAt: string
 }

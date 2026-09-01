@@ -201,4 +201,169 @@ describe('executeCommand', () => {
       },
     })
   })
+
+  it('creates subtasks and enforces hierarchy rules', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    if (!p1.ok) throw new Error()
+
+    const t1 = executeCommand(p1.value.document, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Main Task',
+    })
+    if (!t1.ok) throw new Error()
+
+    // Valid subtask
+    const subtaskResult = executeCommand(t1.value.document, {
+      type: 'create-subtask',
+      id: 'subtask-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      projectId: 'proj-1',
+      parentTaskId: 'task-1',
+      title: 'Step 1',
+    })
+    expect(subtaskResult).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          tasks: [
+            { id: 'task-1', title: 'Main Task' },
+            { id: 'subtask-1', parentTaskId: 'task-1', title: 'Step 1' },
+          ],
+        },
+        revision: { number: 3, kind: 'subtask-created' },
+      },
+    })
+    if (!subtaskResult.ok) throw new Error()
+
+    // Cannot nest under a subtask
+    const nestedResult = executeCommand(subtaskResult.value.document, {
+      type: 'create-subtask',
+      id: 'subtask-2',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      projectId: 'proj-1',
+      parentTaskId: 'subtask-1',
+      title: 'Nested Step',
+    })
+    expect(nestedResult).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-command',
+        message: 'Subtasks cannot be nested under another subtask.',
+      },
+    })
+
+    // Cannot attach to missing parent
+    const missingParentResult = executeCommand(subtaskResult.value.document, {
+      type: 'create-subtask',
+      id: 'subtask-3',
+      revisionId: 'rev-5',
+      occurredAt: secondMoment,
+      projectId: 'proj-1',
+      parentTaskId: 'non-existent',
+      title: 'Ghost Step',
+    })
+    expect(missingParentResult).toEqual({
+      ok: false,
+      error: {
+        code: 'parent-task-not-found',
+        message: 'Choose an existing parent task before adding a subtask.',
+      },
+    })
+  })
+
+  it('updates task constraints with validation', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    if (!p1.ok) throw new Error()
+
+    const t1 = executeCommand(p1.value.document, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Main Task',
+    })
+    if (!t1.ok) throw new Error()
+
+    // Invalid estimate minutes
+    const badEstimate = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      estimateMinutes: -10,
+    })
+    expect(badEstimate).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-command',
+        message: 'Estimated duration must be an integer between 1 and 1440 minutes.',
+      },
+    })
+
+    // Invalid earliest >= due
+    const badRange = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      earliestStartAt: '2026-09-05T12:00:00.000Z',
+      dueAt: '2026-09-02T12:00:00.000Z',
+    })
+    expect(badRange).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-command',
+        message: 'Earliest start time must be before the due date.',
+      },
+    })
+
+    // Valid constraints
+    const validUpdate = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      estimateMinutes: 45,
+      dueAt: '2026-09-10T18:00:00.000Z',
+    })
+    expect(validUpdate).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          tasks: [
+            {
+              id: 'task-1',
+              estimateMinutes: 45,
+              dueAt: '2026-09-10T18:00:00.000Z',
+            },
+          ],
+        },
+        revision: { number: 3, kind: 'task-constraints-updated' },
+      },
+    })
+  })
 })

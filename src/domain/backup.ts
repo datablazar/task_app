@@ -53,7 +53,7 @@ export const validatePlannerDocument = (
     return invalidBackup('A backup must contain a planner document.')
   }
 
-  // Handle migration from version 1 to current schema
+  // Handle migration from earlier versions to current schema (v3)
   let docRecord = candidate
   if (docRecord.schemaVersion === 1) {
     if (
@@ -73,6 +73,25 @@ export const validatePlannerDocument = (
       schemaVersion: PLANNER_SCHEMA_VERSION,
       fixedEvents: [],
       taskSessions: [],
+    }
+  } else if (docRecord.schemaVersion === 2) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        'schemaVersion',
+        'timeZone',
+        'revision',
+        'projects',
+        'tasks',
+        'fixedEvents',
+        'taskSessions',
+        'revisions',
+      ])
+    ) {
+      return invalidBackup('A backup contains unsupported document fields.')
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
     }
   }
 
@@ -195,7 +214,18 @@ const parseTasks = (
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'projectId', 'title', 'completed', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, [
+        'id',
+        'projectId',
+        'parentTaskId',
+        'title',
+        'completed',
+        'estimateMinutes',
+        'dueAt',
+        'earliestStartAt',
+        'createdAt',
+        'updatedAt',
+      ]) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.projectId) ||
       !isTitle(item.title) ||
@@ -206,6 +236,31 @@ const parseTasks = (
     if (!projectIds.has(item.projectId)) {
       return invalidBackup('Every task must belong to an imported project.')
     }
+    if (item.parentTaskId !== undefined && (!isIdentifier(item.parentTaskId) || item.parentTaskId === item.id)) {
+      return invalidBackup('Subtasks need a valid, distinct parent task ID.')
+    }
+    if (
+      item.estimateMinutes !== undefined &&
+      (typeof item.estimateMinutes !== 'number' ||
+        !Number.isInteger(item.estimateMinutes) ||
+        item.estimateMinutes <= 0 ||
+        item.estimateMinutes > 1440)
+    ) {
+      return invalidBackup('Task estimated duration must be an integer between 1 and 1440 minutes.')
+    }
+    if (item.dueAt !== undefined && !isUtcTimestamp(item.dueAt)) {
+      return invalidBackup('Task due date must be a valid UTC timestamp.')
+    }
+    if (item.earliestStartAt !== undefined && !isUtcTimestamp(item.earliestStartAt)) {
+      return invalidBackup('Task earliest start date must be a valid UTC timestamp.')
+    }
+    if (
+      typeof item.earliestStartAt === 'string' &&
+      typeof item.dueAt === 'string' &&
+      Date.parse(item.earliestStartAt) >= Date.parse(item.dueAt)
+    ) {
+      return invalidBackup('Task earliest start date must be before due date.')
+    }
     if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
       return invalidBackup('Every task needs UTC creation and update timestamps.')
     }
@@ -213,15 +268,36 @@ const parseTasks = (
       return invalidBackup('Project and task IDs must be unique together.')
     }
     identifiers.add(item.id)
-    tasks.push({
+
+    const task: Task = {
       id: item.id,
       projectId: item.projectId,
       title: item.title,
       completed: item.completed,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-    })
+    }
+    if (typeof item.parentTaskId === 'string') task.parentTaskId = item.parentTaskId
+    if (typeof item.estimateMinutes === 'number') task.estimateMinutes = item.estimateMinutes
+    if (typeof item.dueAt === 'string') task.dueAt = item.dueAt
+    if (typeof item.earliestStartAt === 'string') task.earliestStartAt = item.earliestStartAt
+
+    tasks.push(task)
   }
+
+  const taskMap = new Map(tasks.map((task) => [task.id, task]))
+  for (const task of tasks) {
+    if (task.parentTaskId !== undefined) {
+      const parent = taskMap.get(task.parentTaskId)
+      if (!parent || parent.projectId !== task.projectId) {
+        return invalidBackup('Subtasks must belong to an imported parent task in the same project.')
+      }
+      if (parent.parentTaskId !== undefined) {
+        return invalidBackup('Subtasks cannot be nested under another subtask.')
+      }
+    }
+  }
+
   return success(tasks)
 }
 
@@ -319,7 +395,9 @@ const parseTaskSessions = (
 const revisionKinds: readonly RevisionKind[] = [
   'project-created',
   'task-created',
+  'subtask-created',
   'task-completion-changed',
+  'task-constraints-updated',
   'fixed-event-created',
   'fixed-event-deleted',
   'task-session-created',
