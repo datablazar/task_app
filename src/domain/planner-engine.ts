@@ -406,3 +406,65 @@ const generateAvailableSlots = (
 
   return slots
 }
+
+export interface RepairScheduleResult {
+  sessions: TaskSession[]
+  repairedCount: number
+  risks: PlanRisk[]
+  reasons: string[]
+}
+
+export const repairSchedule = (
+  document: PlannerDocument,
+  options?: { now?: string },
+): RepairScheduleResult => {
+  const nowStr = options?.now ?? new Date().toISOString()
+  const nowMs = Date.parse(nowStr)
+
+  const taskMap = new Map(document.tasks.map((t) => [t.id, t]))
+
+  // Identify stale past sessions: ended before now and corresponding task is not completed
+  const activeSessions: TaskSession[] = []
+  let repairedCount = 0
+
+  for (const session of document.taskSessions) {
+    const endMs = Date.parse(session.endAt)
+    const task = taskMap.get(session.taskId)
+    const isCompleted = task?.completed ?? false
+
+    if (endMs < nowMs && !isCompleted && !session.locked) {
+      // Past session that was not completed and not locked -> needs repair
+      repairedCount++
+    } else {
+      activeSessions.push(session)
+    }
+  }
+
+  if (repairedCount === 0) {
+    return {
+      sessions: document.taskSessions,
+      repairedCount: 0,
+      risks: [],
+      reasons: ['No overdue or stale past sessions required rescheduling.'],
+    }
+  }
+
+  // Create temporary document with cleaned sessions, then run reference planner forward from now
+  const cleanDoc: PlannerDocument = {
+    ...document,
+    taskSessions: activeSessions,
+  }
+
+  const replan = generateReferencePlan(cleanDoc, { now: nowStr })
+
+  return {
+    sessions: replan.sessions,
+    repairedCount,
+    risks: replan.risks,
+    reasons: [
+      `Repaired schedule: moved ${repairedCount} overdue session(s) forward into upcoming available slots.`,
+      ...replan.reasons,
+    ],
+  }
+}
+

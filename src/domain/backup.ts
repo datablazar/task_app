@@ -702,6 +702,7 @@ const revisionKinds: readonly RevisionKind[] = [
   'policy-updated',
   'proposal-accepted',
   'proposal-rejected',
+  'schedule-repaired',
 ]
 
 const parseRevisions = (

@@ -119,7 +119,34 @@ export const TaskPanel = ({
     return map
   }, [dependencies, taskMap])
 
-  const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parentTaskId), [tasks])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'scheduled' | 'due-soon' | 'completed'>('all')
+
+  const filteredTopLevelTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (t.parentTaskId) return false
+
+      if (searchQuery.trim()) {
+        const matchesQuery = t.title.toLowerCase().includes(searchQuery.toLowerCase().trim())
+        if (!matchesQuery) return false
+      }
+
+      const sessionCount = sessionCountByTask.get(t.id) ?? 0
+      switch (filterStatus) {
+        case 'active':
+          return !t.completed
+        case 'completed':
+          return t.completed
+        case 'scheduled':
+          return sessionCount > 0
+        case 'due-soon':
+          return Boolean(t.dueAt) && !t.completed
+        case 'all':
+        default:
+          return true
+      }
+    })
+  }, [filterStatus, searchQuery, sessionCountByTask, tasks])
 
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, Task[]>()
@@ -294,13 +321,68 @@ export const TaskPanel = ({
         <>
           <h2 id="selected-project-heading">{project.title}</h2>
           <section aria-labelledby="tasks-heading" className="tasks-section">
-            <h3 id="tasks-heading">Tasks</h3>
-            {topLevelTasks.length > 0 ? (
+            <div className="tasks-section__header">
+              <h3 id="tasks-heading">Tasks</h3>
+              <div className="task-search-wrapper">
+                <input
+                  aria-label="Search tasks"
+                  className="task-search-input"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter tasks..."
+                  type="search"
+                  value={searchQuery}
+                />
+              </div>
+            </div>
+
+            <div className="task-filter-chips" role="group" aria-label="Filter tasks by status">
+              <button
+                className={`task-filter-chip ${filterStatus === 'all' ? 'is-active' : ''}`}
+                onClick={() => setFilterStatus('all')}
+                type="button"
+              >
+                All
+              </button>
+              <button
+                className={`task-filter-chip ${filterStatus === 'active' ? 'is-active' : ''}`}
+                onClick={() => setFilterStatus('active')}
+                type="button"
+              >
+                Active
+              </button>
+              <button
+                className={`task-filter-chip ${filterStatus === 'scheduled' ? 'is-active' : ''}`}
+                onClick={() => setFilterStatus('scheduled')}
+                type="button"
+              >
+                Scheduled
+              </button>
+              <button
+                className={`task-filter-chip ${filterStatus === 'due-soon' ? 'is-active' : ''}`}
+                onClick={() => setFilterStatus('due-soon')}
+                type="button"
+              >
+                Due Soon
+              </button>
+              <button
+                className={`task-filter-chip ${filterStatus === 'completed' ? 'is-active' : ''}`}
+                onClick={() => setFilterStatus('completed')}
+                type="button"
+              >
+                Done
+              </button>
+            </div>
+
+            {filteredTopLevelTasks.length > 0 ? (
               <ul className="task-list">
-                {topLevelTasks.map((task) => renderTaskItem(task, false))}
+                {filteredTopLevelTasks.map((task) => renderTaskItem(task, false))}
               </ul>
             ) : (
-              <p className="empty-tasks">Add the first task for this project.</p>
+              <p className="empty-tasks">
+                {searchQuery.trim() || filterStatus !== 'all'
+                  ? 'No tasks match current filter.'
+                  : 'Add the first task for this project.'}
+              </p>
             )}
             <form className="task-form" onSubmit={submit}>
               <label className="visually-hidden" htmlFor="new-task-title">

@@ -6,10 +6,10 @@
 
 | Item | Current truth |
 |---|---|
-| State | Milestone I4 complete; preparing Milestone I5 (Daily product). |
-| Active milestone | **I5 — Daily product** |
-| Next bounded outcome | Installable offline product, responsive Today/capture and robust recovery. |
-| Evidence required | Offline use, clear tested backup/restore and narrow-screen core flow. |
+| State | Milestone I5 complete; core personal planner delivered. |
+| Active milestone | **I6 — Reviewable inbox & capture workspace** |
+| Next bounded outcome | Unstructured capture staging, source linking and bulk conversion to validated tasks. |
+| Evidence required | Staged notes never directly mutate calendar until confirmed; exact Undo and zero data loss. |
 | Blocker | None. |
 | Last verified | 2026-09-01 |
 
@@ -70,8 +70,8 @@ The product should feel calm, quick and trustworthy: dominant day/week calendar,
 | **I2 — Reference planner** | Availability, cycle-safe dependencies, allocation, risks, revisions and Undo. | Invariants, determinism, rejected invalid graphs, factual replan and exact Undo. (Completed) |
 | **I3 — Planning quality** | Stability, load balance, missed work and policy presets. | Golden cases improve without correctness loss; interactive representative workload. (Completed) |
 | **I4 — Optional interpretation** | Four bounded capabilities, confirmation, provenance, limits and evaluation. | Feature can fail/disable safely; each capability independently passes measured quality, privacy, reliability, latency and cost. (Completed) |
-| **I5 Now — Daily product** | Installable offline product, responsive Today/capture and robust recovery. | Offline use, clear tested backup/restore and narrow-screen core flow. |
-| **I6–I9 Later** | Inbox; first justified remote capability; file workspace; broader PA slices. | Each addition follows `input -> validated command -> deterministic effect -> audit -> Undo`. |
+| **I5 — Daily product** | Installable offline product, responsive Today/capture and robust recovery. | Offline use, clear tested backup/restore and narrow-screen core flow. (Completed) |
+| **I6 Now — Inbox** | Unstructured capture staging and reviewable conversion. | Each addition follows `input -> validated command -> deterministic effect -> audit -> Undo`. |
 
 ## Quality and cost gate
 

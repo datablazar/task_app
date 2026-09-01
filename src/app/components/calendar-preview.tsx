@@ -11,6 +11,7 @@ interface CalendarPreviewProps {
   taskSessions: TaskSession[]
   policy?: PlanningPolicy
   selectedTaskId: string | null
+  hasOverdueSessions?: boolean
   onCreateFixedEvent: (title: string, startAt: string, endAt: string) => boolean
   onScheduleTaskSession: (taskId: string, startAt: string, endAt: string) => boolean
   onDeleteFixedEvent: (eventId: string) => boolean
@@ -18,6 +19,7 @@ interface CalendarPreviewProps {
   onToggleSessionLock?: (sessionId: string) => boolean
   onUpdatePolicy?: (policy: PlanningPolicy) => boolean
   onAutoPlan?: () => void
+  onRepairSchedule?: () => void
   risks?: PlanRisk[]
 }
 
@@ -39,6 +41,7 @@ export const CalendarPreview = ({
   taskSessions,
   policy,
   selectedTaskId,
+  hasOverdueSessions,
   onCreateFixedEvent,
   onScheduleTaskSession,
   onDeleteFixedEvent,
@@ -46,19 +49,31 @@ export const CalendarPreview = ({
   onToggleSessionLock,
   onUpdatePolicy,
   onAutoPlan,
+  onRepairSchedule,
   risks = [],
 }: CalendarPreviewProps) => {
   const [weekOffset, setWeekOffset] = useState(0)
+  const [viewMode, setViewMode] = useState<'week' | 'today'>('week')
 
   const activeReferenceDate = new Date(referenceDate)
   activeReferenceDate.setDate(activeReferenceDate.getDate() + weekOffset)
-  const week = getWeek(activeReferenceDate)
+  const fullWeek = getWeek(activeReferenceDate)
 
-  const heading = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    weekday: 'long',
-  }).format(week[0])
+  // In 'today' mode, only display active day (today or selected offset)
+  const activeDays = viewMode === 'today' ? [activeReferenceDate] : fullWeek
+
+  const heading =
+    viewMode === 'today'
+      ? new Intl.DateTimeFormat('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          weekday: 'long',
+        }).format(activeReferenceDate)
+      : new Intl.DateTimeFormat('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          weekday: 'long',
+        }).format(fullWeek[0])
 
   const [activeSlot, setActiveSlot] = useState<ActiveSlot | null>(null)
   const [scheduleMode, setScheduleMode] = useState<'task' | 'fixed'>('task')
@@ -115,7 +130,26 @@ export const CalendarPreview = ({
       <header className="calendar-panel__header">
         <div className="calendar-panel__header-info">
           <h1 id="calendar-heading">{heading}</h1>
+          <div className="view-mode-toggle" role="group" aria-label="Calendar view mode">
+            <button
+              aria-label="Switch to week view"
+              className={`view-mode-toggle__btn ${viewMode === 'week' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('week')}
+              type="button"
+            >
+              Week
+            </button>
+            <button
+              aria-label="Switch to today view"
+              className={`view-mode-toggle__btn ${viewMode === 'today' ? 'is-active' : ''}`}
+              onClick={() => setViewMode('today')}
+              type="button"
+            >
+              Today
+            </button>
+          </div>
         </div>
+
         <div className="calendar-panel__actions">
           {policy && onUpdatePolicy ? (
             <div className="calendar-policy-select">
@@ -140,6 +174,17 @@ export const CalendarPreview = ({
             </div>
           ) : null}
 
+          {hasOverdueSessions && onRepairSchedule ? (
+            <button
+              className="button button--warning button--small"
+              onClick={onRepairSchedule}
+              title="Reschedule overdue past sessions into upcoming open slots"
+              type="button"
+            >
+              ⚠️ Repair Schedule
+            </button>
+          ) : null}
+
           {onAutoPlan ? (
             <button
               className="button button--primary button--small"
@@ -151,9 +196,9 @@ export const CalendarPreview = ({
           ) : null}
           <div className="calendar-nav">
             <button
-              aria-label="Previous week"
+              aria-label={viewMode === 'today' ? 'Previous day' : 'Previous week'}
               className="calendar-nav__btn"
-              onClick={() => setWeekOffset((w) => w - 7)}
+              onClick={() => setWeekOffset((w) => w - (viewMode === 'today' ? 1 : 7))}
               type="button"
             >
               ‹
@@ -166,9 +211,9 @@ export const CalendarPreview = ({
               Today
             </button>
             <button
-              aria-label="Next week"
+              aria-label={viewMode === 'today' ? 'Next day' : 'Next week'}
               className="calendar-nav__btn"
-              onClick={() => setWeekOffset((w) => w + 7)}
+              onClick={() => setWeekOffset((w) => w + (viewMode === 'today' ? 1 : 7))}
               type="button"
             >
               ›
@@ -187,9 +232,9 @@ export const CalendarPreview = ({
         </div>
       ) : null}
 
-      <div className="calendar-grid">
+      <div className={`calendar-grid ${viewMode === 'today' ? 'calendar-grid--today' : ''}`}>
         <div className="calendar-grid__corner" />
-        {week.map((day) => {
+        {activeDays.map((day) => {
           const isCurrentToday = day.toISOString().slice(0, 10) === todayIso
           return (
             <div
@@ -207,7 +252,7 @@ export const CalendarPreview = ({
         {hours.map((hour) => (
           <div className="calendar-grid__row" key={hour}>
             <div className="calendar-grid__time-label">{`${String(hour).padStart(2, '0')}:00`}</div>
-            {week.map((day) => {
+            {activeDays.map((day) => {
               const slotFixed = fixedEvents.filter((event) => {
                 const eventStart = new Date(event.startAt)
                 return (
@@ -263,6 +308,11 @@ export const CalendarPreview = ({
                   {slotSessions.map((session) => {
                     const task = taskLookup.get(session.taskId)
                     const title = task?.title ?? 'Task session'
+                    const sStart = new Date(session.startAt)
+                    const sEnd = new Date(session.endAt)
+                    const durationMins = Math.round((sEnd.getTime() - sStart.getTime()) / (60 * 1000))
+                    const timeRange = `${String(sStart.getUTCHours()).padStart(2, '0')}:${String(sStart.getUTCMinutes()).padStart(2, '0')}–${String(sEnd.getUTCHours()).padStart(2, '0')}:${String(sEnd.getUTCMinutes()).padStart(2, '0')}`
+
                     return (
                       <div
                         className={`calendar-item calendar-item--session ${session.locked ? 'is-locked' : ''}`}
@@ -271,6 +321,9 @@ export const CalendarPreview = ({
                         <div className="calendar-item__content">
                           <div className="calendar-item__meta">
                             <span className="calendar-item__tag">{session.locked ? '🔒 Pinned' : 'Session'}</span>
+                            <span className="calendar-item__duration" title={`Duration: ${durationMins}m`}>
+                              {durationMins}m
+                            </span>
                             <div className="calendar-item__actions">
                               {onToggleSessionLock ? (
                                 <button
@@ -293,6 +346,7 @@ export const CalendarPreview = ({
                             </div>
                           </div>
                           <span className="calendar-item__title">{title}</span>
+                          <span className="calendar-item__time-subtext">{timeRange}</span>
                         </div>
                       </div>
                     )

@@ -18,6 +18,7 @@ export type RevisionKind =
   | 'policy-updated'
   | 'proposal-accepted'
   | 'proposal-rejected'
+  | 'schedule-repaired'
 
 export type PolicyPreset = 'balanced' | 'focus' | 'deadline'
 

@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createEmptyPlannerDocument } from '../domain/model'
 import { createStableId } from './ids'
-import { generateReferencePlan } from '../domain/planner-engine'
+import { generateReferencePlan, repairSchedule } from '../domain/planner-engine'
 import { defaultInterpretationService } from '../domain/interpretation'
+import { parseQuickTaskInput } from '../domain/interpretation/nlp-parser'
 import type { PlannerWorkspace } from '../application/planner-workspace'
 import type {
   PlanningPolicy,
@@ -666,6 +667,100 @@ export const usePlanner = ({
     [createId, document, now, workspace],
   )
 
+  const createQuickTask = useCallback(
+    (input: string, fallbackProjectId?: string): boolean => {
+      const parsed = parseQuickTaskInput(input, document.projects, now())
+      const targetProjectId = parsed.projectId ?? fallbackProjectId ?? document.projects[0]?.id
+      if (!targetProjectId) {
+        setNotice({ tone: 'error', message: 'Create a project first before adding tasks.' })
+        return false
+      }
+
+      const taskId = createId()
+      const r1 = workspace.execute(document, {
+        type: 'create-task',
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        projectId: targetProjectId,
+        title: parsed.cleanedTitle,
+      })
+      if (!r1.ok) {
+        setNotice({ tone: 'error', message: r1.error.message })
+        return false
+      }
+
+      let currentDoc = r1.value.document
+
+      if (parsed.estimateMinutes || parsed.dueAt) {
+        const r2 = workspace.execute(currentDoc, {
+          type: 'update-task-constraints',
+          id: taskId,
+          revisionId: createId(),
+          occurredAt: now().toISOString(),
+          taskId,
+          estimateMinutes: parsed.estimateMinutes,
+          dueAt: parsed.dueAt,
+        })
+        if (r2.ok) {
+          currentDoc = r2.value.document
+        }
+      }
+
+      setDocument(currentDoc)
+      setNotice({ tone: 'success', message: `Task “${parsed.cleanedTitle}” added.` })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const hasOverdueSessions = useMemo(() => {
+    const nowMs = now().getTime()
+    const taskMap = new Map(document.tasks.map((t) => [t.id, t]))
+    return document.taskSessions.some((session) => {
+      const isPast = Date.parse(session.endAt) < nowMs
+      const task = taskMap.get(session.taskId)
+      return isPast && !task?.completed && !session.locked
+    })
+  }, [document.taskSessions, document.tasks, now])
+
+  const repairAndReschedule = useCallback((): {
+    success: boolean
+    repairedCount: number
+    risks: PlanRisk[]
+  } => {
+    const repairResult = repairSchedule(document, { now: now().toISOString() })
+    if (repairResult.repairedCount === 0) {
+      setNotice({ tone: 'success', message: 'Schedule is already up to date.' })
+      return { success: true, repairedCount: 0, risks: [] }
+    }
+
+    const commandResult = workspace.execute(document, {
+      type: 'repair-schedule',
+      id: createId(),
+      revisionId: createId(),
+      occurredAt: now().toISOString(),
+      sessions: repairResult.sessions,
+    })
+
+    if (!commandResult.ok) {
+      setNotice({ tone: 'error', message: commandResult.error.message })
+      return { success: false, repairedCount: 0, risks: repairResult.risks }
+    }
+
+    setDocument(commandResult.value.document)
+    setLatestRisks(repairResult.risks)
+    setNotice({
+      tone: 'success',
+      message: `Repaired schedule: moved ${repairResult.repairedCount} overdue session(s) forward.`,
+    })
+    return {
+      success: true,
+      repairedCount: repairResult.repairedCount,
+      risks: repairResult.risks,
+    }
+  }, [createId, document, now, workspace])
+
   const restore = useCallback(
     (raw: string): boolean => {
       const result = workspace.restore(raw)
@@ -701,6 +796,7 @@ export const usePlanner = ({
     createDependency,
     createFixedEvent,
     createProject,
+    createQuickTask,
     createSubtask,
     createTask,
     createTaskSession,
@@ -711,9 +807,11 @@ export const usePlanner = ({
     document,
     exportBackup,
     generateAndApplyPlan,
+    hasOverdueSessions,
     interpretTask,
     notice,
     providerMode,
+    repairAndReschedule,
     restore,
     risks: latestRisks,
     setApiKey,

@@ -7,6 +7,7 @@ import { ProjectPanel } from './components/project-panel'
 import { TaskPanel } from './components/task-panel'
 import { AiProposalDialog } from './components/ai-proposal-dialog'
 import { AiSettingsModal } from './components/ai-settings-modal'
+import { QuickCaptureBar } from './components/quick-capture-bar'
 import { usePlanner } from './use-planner'
 import type { StorageLike } from '../infrastructure/local-planner-repository'
 import type { Task } from '../domain/model'
@@ -143,6 +144,12 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
       </header>
 
+      <QuickCaptureBar
+        onCreateQuickTask={planner.createQuickTask}
+        projects={planner.document.projects}
+        selectedProjectId={activeSelectedProjectId}
+      />
+
       <main className="planner-shell">
         <ProjectPanel
           onCreateProject={createProject}
@@ -153,12 +160,14 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         />
         <CalendarPreview
           fixedEvents={planner.document.fixedEvents}
+          hasOverdueSessions={planner.hasOverdueSessions}
           hasProjects={planner.document.projects.length > 0}
           hasTasks={planner.document.tasks.length > 0}
           onAutoPlan={() => planner.generateAndApplyPlan()}
           onCreateFixedEvent={planner.createFixedEvent}
           onDeleteFixedEvent={planner.deleteFixedEvent}
           onDeleteTaskSession={planner.deleteTaskSession}
+          onRepairSchedule={planner.repairAndReschedule}
           onScheduleTaskSession={planner.createTaskSession}
           onToggleSessionLock={planner.toggleSessionLock}
           onUpdatePolicy={planner.updatePolicy}

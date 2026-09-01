@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyPlannerDocument } from './model'
-import { generateReferencePlan } from './planner-engine'
+import { generateReferencePlan, repairSchedule } from './planner-engine'
 import type { Dependency, FixedEvent, PlannerDocument, Task } from './model'
 
 describe('planner-engine', () => {
@@ -183,5 +183,44 @@ describe('planner-engine', () => {
 
     expect(plan.success).toBe(false)
     expect(plan.risks[0]?.message).toContain('Circular dependencies detected')
+  })
+
+  it('repairSchedule recovers past uncompleted sessions and reschedules them forward', () => {
+    const tasks: Task[] = [
+      {
+        id: 'task-overdue',
+        projectId: 'p1',
+        title: 'Task Overdue',
+        completed: false,
+        estimateMinutes: 60,
+        createdAt: '2026-08-31T08:00:00.000Z',
+        updatedAt: '2026-08-31T08:00:00.000Z',
+      },
+    ]
+
+    // Past session ended at 10:00 on Monday
+    const staleSession = {
+      id: 'session-past-1',
+      taskId: 'task-overdue',
+      startAt: '2026-08-31T09:00:00.000Z',
+      endAt: '2026-08-31T10:00:00.000Z',
+      createdAt: '2026-08-31T08:00:00.000Z',
+      updatedAt: '2026-08-31T08:00:00.000Z',
+    }
+
+    const doc: PlannerDocument = {
+      ...baseDocument,
+      tasks,
+      taskSessions: [staleSession],
+    }
+
+    // Now is Monday 14:00 (past the session)
+    const now = '2026-08-31T14:00:00.000Z'
+
+    const repair = repairSchedule(doc, { now })
+    expect(repair.repairedCount).toBe(1)
+    expect(repair.sessions).toHaveLength(1)
+    // Rescheduled session must start at or after 14:00
+    expect(Date.parse(repair.sessions[0].startAt)).toBeGreaterThanOrEqual(Date.parse(now))
   })
 })

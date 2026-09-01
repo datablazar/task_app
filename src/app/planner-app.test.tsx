@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { PlannerApp } from './planner-app'
@@ -305,9 +305,63 @@ describe('PlannerApp', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/Added \d+ subtask/i)
 
     // Close modal
-    await user.click(screen.getByRole('button', { name: 'Done' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     // Verify subtasks are visible in the task panel
     expect(await screen.findByText(/Episode outline/i)).toBeVisible()
+  })
+
+  it('supports Quick Capture with live NLP parsing and view mode switcher', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Sprint 1')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Type into Quick Capture Bar: "Architecture review 90m #sprint"
+    const quickInput = screen.getByPlaceholderText(/Quick capture:/i)
+    await user.type(quickInput, 'Architecture review 90m #sprint')
+
+    // Expect live pill to detect duration
+    expect(screen.getByText('⏱ 90m')).toBeVisible()
+
+    // Submit quick task
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('status')).toHaveTextContent(/Task “Architecture review” added/i)
+
+    // Verify task with duration badge in task list
+    expect(screen.getByText('Architecture review')).toBeVisible()
+    expect(screen.getByText('⏱ 90m')).toBeVisible()
+
+    // Toggle to Today View
+    const todayBtn = screen.getByRole('button', { name: 'Switch to today view' })
+    await user.click(todayBtn)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Tuesday 1 September/i)
+
+    // Toggle back to Week View
+    const weekBtn = screen.getByRole('button', { name: 'Switch to week view' })
+    await user.click(weekBtn)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Monday 31 August/i)
+
+    // Test task search filter
+    const searchInput = screen.getByPlaceholderText('Filter tasks...')
+    await user.type(searchInput, 'NonExistentTask')
+    expect(screen.getByText(/No tasks match current filter/i)).toBeVisible()
+    await user.clear(searchInput)
+    expect(screen.getByText('Architecture review')).toBeVisible()
   })
 })

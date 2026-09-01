@@ -106,6 +106,10 @@ export type PlannerCommand =
       type: 'record-proposal-decision'
       decision: ProposalDecision
     })
+  | (CommandMetadata & {
+      type: 'repair-schedule'
+      sessions: TaskSession[]
+    })
 
 export interface CommandFailure {
   code:
@@ -172,6 +176,8 @@ export const executeCommand = (
       return updatePolicy(document, command)
     case 'record-proposal-decision':
       return recordProposalDecision(document, command)
+    case 'repair-schedule':
+      return repairScheduleCommand(document, command)
   }
 }
 
@@ -685,6 +691,28 @@ const undoLastPlan = (
     {
       taskSessions: restoredSessions,
     },
+  )
+}
+
+const repairScheduleCommand = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'repair-schedule' }>,
+): CommandResult => {
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const snapshot = JSON.stringify(document.taskSessions)
+
+  return revised(
+    document,
+    command,
+    'schedule-repaired',
+    'Repaired schedule and shifted overdue sessions forward.',
+    {
+      taskSessions: command.sessions,
+    },
+    snapshot,
   )
 }
 
