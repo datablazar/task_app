@@ -631,6 +631,18 @@ textarea {
     z-index: 6;
     overflow-y: auto;
   }
+
+  /* The panels float above the calendar visually, but the calendar's own
+     header actions (Auto-Plan Week, policy select, week nav) must stay
+     reachable rather than sitting underneath a panel's footprint, so the
+     calendar reflows to stay clear of whichever panel is open. */
+  .planner-shell.has-projects-open {
+    padding-left: 404px; /* 88 (rail) + 300 (panel) + 16 (gap) */
+  }
+
+  .planner-shell.has-tasks-open {
+    padding-right: 416px; /* 400 (panel) + 16 (gap) */
+  }
 }
 
 @media (min-width: 901px) and (max-width: 1180px) {
@@ -641,6 +653,14 @@ textarea {
   .task-panel {
     width: 340px;
   }
+
+  .planner-shell.has-projects-open {
+    padding-left: 364px; /* 88 (rail) + 260 (panel) + 16 (gap) */
+  }
+
+  .planner-shell.has-tasks-open {
+    padding-right: 356px; /* 340 (panel) + 16 (gap) */
+  }
 }
 
 @media (min-width: 901px) and (prefers-reduced-motion: no-preference) {
@@ -650,6 +670,10 @@ textarea {
 
   .task-panel {
     animation: panelPopRight 160ms var(--ease-spring);
+  }
+
+  .planner-shell {
+    transition: padding 200ms var(--ease-spring);
   }
 }
 

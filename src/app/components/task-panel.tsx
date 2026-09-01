@@ -4,7 +4,7 @@ import { BackupControls } from './backup-controls'
 import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
 
 interface TaskPanelProps {
-  autoFocusOnOpen: boolean
+  focusToken: number
   hidden: boolean
   onCreateTask: (projectId: string, title: string) => boolean
   onCreateSubtask?: (projectId: string, parentTaskId: string, title: string) => boolean
@@ -27,7 +27,7 @@ interface TaskPanelProps {
 }
 
 export const TaskPanel = ({
-  autoFocusOnOpen,
+  focusToken,
   hidden,
   onCreateTask,
   onCreateSubtask,
@@ -50,14 +50,16 @@ export const TaskPanel = ({
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const headingRef = useRef<HTMLHeadingElement>(null)
 
-  // The panel stays mounted at all times (so a closed draft isn't lost);
-  // only an actual desktop pop-out-open should steal keyboard focus, never
-  // the always-on mobile layout or a window resize crossing the breakpoint.
+  // The panel stays mounted at all times (so a closed draft isn't lost).
+  // `focusToken` only increments at the moment of a real desktop-open
+  // action (see planner-app.tsx), so it never fires from a resize or from
+  // the always-on mobile layout the way a derived `isDesktop && isOpen`
+  // boolean would.
   useEffect(() => {
-    if (autoFocusOnOpen) {
+    if (focusToken > 0) {
       headingRef.current?.focus()
     }
-  }, [autoFocusOnOpen])
+  }, [focusToken])
 
   // Constraint editing state
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)

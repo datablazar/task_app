@@ -74,15 +74,38 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const [isTasksOpen, setIsTasksOpen] = useState(false)
   const showProjectsPanel = isProjectsOpen || !isDesktop
   const showTasksPanel = isTasksOpen || !isDesktop
-  // Both panels stay mounted (and keep their draft state) at all times;
-  // only a desktop pop-out toggle should steal keyboard focus on open,
-  // never the always-on mobile layout or a window resize.
-  const projectsJustPoppedOut = isDesktop && isProjectsOpen
-  const tasksJustPoppedOut = isDesktop && isTasksOpen
+
+  // Both panels stay mounted (and keep their draft state) at all times.
+  // Autofocus-on-open must react to an actual desktop open EVENT, not to
+  // `isDesktop && isOpen` as a derived value: that combination also flips
+  // true on an unrelated resize (e.g. a mobile selection already left
+  // isOpen=true, then the window is widened past the breakpoint), which
+  // would steal focus with no open action at all. These counters only
+  // increment at the point of a real desktop-open action, so a resize on
+  // its own never changes them.
+  const [projectsFocusToken, setProjectsFocusToken] = useState(0)
+  const [tasksFocusToken, setTasksFocusToken] = useState(0)
+
+  const toggleProjectsPanel = () => {
+    setIsProjectsOpen((open) => {
+      const next = !open
+      if (next) setProjectsFocusToken((token) => token + 1)
+      return next
+    })
+  }
+
+  const toggleTasksPanel = () => {
+    setIsTasksOpen((open) => {
+      const next = !open
+      if (next) setTasksFocusToken((token) => token + 1)
+      return next
+    })
+  }
 
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId)
     setIsTasksOpen(true)
+    if (isDesktop) setTasksFocusToken((token) => token + 1)
   }
 
   // Theme State: 'light' (Editorial Alabaster) vs 'dark' (Obsidian Smoked Glass)
@@ -126,6 +149,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     }
     setSelectedProjectId(project.id)
     setIsTasksOpen(true)
+    if (isDesktop) setTasksFocusToken((token) => token + 1)
     return true
   }
 
@@ -237,13 +261,21 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         </div>
       </header>
 
-      <main className="planner-shell">
+      <main
+        className={[
+          'planner-shell',
+          isDesktop && isProjectsOpen ? 'has-projects-open' : '',
+          isDesktop && isTasksOpen ? 'has-tasks-open' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <nav aria-label="Panel navigation" className="app-rail">
           <button
             aria-label="Toggle Projects panel"
             aria-pressed={isProjectsOpen}
             className={`app-rail__btn${isProjectsOpen ? ' is-active' : ''}`}
-            onClick={() => setIsProjectsOpen((open) => !open)}
+            onClick={toggleProjectsPanel}
             title="Projects"
             type="button"
           >
@@ -261,7 +293,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
             aria-label="Toggle Tasks panel"
             aria-pressed={isTasksOpen}
             className={`app-rail__btn${isTasksOpen ? ' is-active' : ''}`}
-            onClick={() => setIsTasksOpen((open) => !open)}
+            onClick={toggleTasksPanel}
             title="Tasks"
             type="button"
           >
@@ -286,7 +318,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         </nav>
 
         <ProjectPanel
-          autoFocusOnOpen={projectsJustPoppedOut}
+          focusToken={projectsFocusToken}
           hidden={!showProjectsPanel}
           onCreateProject={createProject}
           onSelectProject={selectProject}
@@ -317,7 +349,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         />
 
         <TaskPanel
-          autoFocusOnOpen={tasksJustPoppedOut}
+          focusToken={tasksFocusToken}
           dependencies={planner.document.dependencies}
           hidden={!showTasksPanel}
           onCreateDependency={planner.createDependency}

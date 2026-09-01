@@ -4,12 +4,12 @@
   "description": "Local-first, deterministic daily and weekly planner with offline intelligence.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#4338ca",
+  "background_color": "#0a1526",
+  "theme_color": "#16283f",
   "orientation": "any",
   "icons": [
     {
-      "src": "/vite.svg",
+      "src": "/icon.svg",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

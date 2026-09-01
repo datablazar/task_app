@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import type { Project } from '../../domain/model'
 
 interface ProjectPanelProps {
-  autoFocusOnOpen: boolean
+  focusToken: number
   hidden: boolean
   onCreateProject: (title: string) => boolean
   onSelectProject: (projectId: string) => void
@@ -13,7 +13,7 @@ interface ProjectPanelProps {
 }
 
 export const ProjectPanel = ({
-  autoFocusOnOpen,
+  focusToken,
   hidden,
   onCreateProject,
   onSelectProject,
@@ -32,14 +32,16 @@ export const ProjectPanel = ({
     }
   }, [isCreating])
 
-  // The panel stays mounted at all times (so a closed draft isn't lost);
-  // only an actual desktop pop-out-open should steal keyboard focus, never
-  // the always-on mobile layout or a window resize crossing the breakpoint.
+  // The panel stays mounted at all times (so a closed draft isn't lost).
+  // `focusToken` only increments at the moment of a real desktop-open
+  // action (see planner-app.tsx), so it never fires from a resize or from
+  // the always-on mobile layout the way a derived `isDesktop && isOpen`
+  // boolean would.
   useEffect(() => {
-    if (autoFocusOnOpen) {
+    if (focusToken > 0) {
       headingRef.current?.focus()
     }
-  }, [autoFocusOnOpen])
+  }, [focusToken])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
