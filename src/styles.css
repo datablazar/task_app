@@ -686,3 +686,205 @@ label[for]:focus-within {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Interactive Calendar Items & Slots */
+.calendar-grid__slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+}
+
+.calendar-grid__add-slot-btn {
+  display: flex;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  cursor: pointer;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-grid__slot:hover .calendar-grid__add-slot-btn,
+.calendar-grid__add-slot-btn:focus-visible {
+  opacity: 1;
+  background: rgba(8, 33, 143, 0.06);
+  color: #08218f;
+}
+
+.calendar-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.calendar-item--fixed {
+  border-left: 3px solid #1e293b;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.calendar-item--session {
+  border-left: 3px solid #08218f;
+  background: #eef2ff;
+  color: #1e1b4b;
+}
+
+.calendar-item__content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.calendar-item__tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.calendar-item__title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-item__delete {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.calendar-item__delete:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
+}
+
+/* Calendar Scheduling Dialog */
+.calendar-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  padding: 16px;
+}
+
+.calendar-dialog {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.calendar-dialog h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.calendar-dialog__sub {
+  margin: 4px 0 16px;
+  font-size: 0.88rem;
+  color: #64748b;
+}
+
+.calendar-dialog__modes {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.calendar-dialog__radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.calendar-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.calendar-dialog__field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.calendar-dialog__field input,
+.calendar-dialog__field select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.calendar-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Task Badge & Selected Card */
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-card.is-selected .task-row {
+  border-color: #08218f;
+  background: #f8faff;
+}
+
+.task-badge {
+  align-self: flex-start;
+  margin-left: 36px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #08218f;
+  font-size: 0.72rem;
+  font-weight: 600;
+}

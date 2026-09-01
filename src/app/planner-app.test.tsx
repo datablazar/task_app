@@ -51,4 +51,56 @@ describe('PlannerApp', () => {
     expect(task).toBeChecked()
     expect(storage.getItem('pa-planner:document:v1')).toContain('Outline week one')
   })
+
+  it('schedules a task session on the calendar and persists it to storage', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let identifier = 0
+
+    render(
+      <PlannerApp
+        createId={() => {
+          identifier += 1
+          return `id-${identifier}`
+        }}
+        now={() => new Date('2026-09-01T09:00:00.000Z')}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    await user.type(screen.getByLabelText('Project name'), 'Research Course')
+    await user.keyboard('{Enter}')
+
+    // Add task
+    await user.type(
+      screen.getByLabelText('Add a task to Research Course'),
+      'Read paper',
+    )
+    await user.keyboard('{Enter}')
+
+    // Click slot at 10:00 on Tuesday 1 Sep
+    const slotBtn = screen.getByRole('button', { name: /schedule at 10:00 on tue 1/i })
+    await user.click(slotBtn)
+
+    // Modal dialog appears
+    expect(screen.getByRole('dialog')).toBeVisible()
+    expect(screen.getByRole('heading', { name: /schedule at 10:00/i })).toBeVisible()
+
+    // Confirm scheduling task session
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    // Calendar now displays the session
+    expect(screen.getByText('Session')).toBeVisible()
+    expect(screen.getAllByText('Read paper')).toHaveLength(2)
+
+    // Task panel displays 1 scheduled badge
+    expect(screen.getByText('1 scheduled')).toBeVisible()
+
+    // Verify storage persistence
+    const saved = storage.getItem('pa-planner:document:v1')
+    expect(saved).toContain('taskSessions')
+    expect(saved).toContain('Read paper')
+  })
 })

@@ -24,6 +24,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     planner.document.projects[0]?.id ?? null,
   )
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [referenceDate] = useState(() => now?.() ?? new Date())
 
   const selectedProject =
@@ -89,16 +90,27 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           selectedProjectId={activeSelectedProjectId}
         />
         <CalendarPreview
+          fixedEvents={planner.document.fixedEvents}
           hasProjects={planner.document.projects.length > 0}
           hasTasks={planner.document.tasks.length > 0}
+          onCreateFixedEvent={planner.createFixedEvent}
+          onDeleteFixedEvent={planner.deleteFixedEvent}
+          onDeleteTaskSession={planner.deleteTaskSession}
+          onScheduleTaskSession={planner.createTaskSession}
           referenceDate={referenceDate}
+          selectedTaskId={selectedTaskId}
+          taskSessions={planner.document.taskSessions}
+          tasks={planner.document.tasks}
         />
         <TaskPanel
           onCreateTask={planner.createTask}
           onExport={exportBackup}
           onImport={importBackup}
+          onSelectTaskId={setSelectedTaskId}
           onSetTaskCompletion={planner.setTaskCompletion}
           project={selectedProject}
+          selectedTaskId={selectedTaskId}
+          taskSessions={planner.document.taskSessions}
           tasks={selectedTasks}
         />
       </main>

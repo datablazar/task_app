@@ -1,6 +1,14 @@
 import { PLANNER_SCHEMA_VERSION } from './model'
 import { failure, success } from './result'
-import type { PlannerDocument, Project, Revision, RevisionKind, Task } from './model'
+import type {
+  FixedEvent,
+  PlannerDocument,
+  Project,
+  Revision,
+  RevisionKind,
+  Task,
+  TaskSession,
+} from './model'
 import type { Result } from './result'
 
 const maximumTitleLength = 200
@@ -45,67 +53,108 @@ export const validatePlannerDocument = (
     return invalidBackup('A backup must contain a planner document.')
   }
 
+  // Handle migration from version 1 to current schema
+  let docRecord = candidate
+  if (docRecord.schemaVersion === 1) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        'schemaVersion',
+        'timeZone',
+        'revision',
+        'projects',
+        'tasks',
+        'revisions',
+      ])
+    ) {
+      return invalidBackup('A backup contains unsupported document fields.')
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      fixedEvents: [],
+      taskSessions: [],
+    }
+  }
+
   if (
-    !hasOnlyKeys(candidate, [
+    !hasOnlyKeys(docRecord, [
       'schemaVersion',
       'timeZone',
       'revision',
       'projects',
       'tasks',
+      'fixedEvents',
+      'taskSessions',
       'revisions',
     ])
   ) {
     return invalidBackup('A backup contains unsupported document fields.')
   }
 
-  if (candidate.schemaVersion !== PLANNER_SCHEMA_VERSION) {
+  if (docRecord.schemaVersion !== PLANNER_SCHEMA_VERSION) {
     return failure({
       code: 'unsupported-version',
-      message: `This backup uses an unsupported schema version: ${String(candidate.schemaVersion)}.`,
+      message: `This backup uses an unsupported schema version: ${String(docRecord.schemaVersion)}.`,
     })
   }
 
-  if (!isIanaTimeZone(candidate.timeZone)) {
+  if (!isIanaTimeZone(docRecord.timeZone)) {
     return invalidBackup('A backup needs a valid IANA time zone.')
   }
 
-  if (!isNonNegativeInteger(candidate.revision)) {
+  if (!isNonNegativeInteger(docRecord.revision)) {
     return invalidBackup('A backup needs a non-negative revision number.')
   }
-  const documentRevision = candidate.revision
+  const documentRevision = docRecord.revision
 
-  const projects = parseProjects(candidate.projects)
+  const identifiers = new Set<string>()
+
+  const projects = parseProjects(docRecord.projects, identifiers)
   if (!projects.ok) {
     return projects
   }
 
-  const tasks = parseTasks(candidate.tasks, projects.value)
+  const tasks = parseTasks(docRecord.tasks, projects.value, identifiers)
   if (!tasks.ok) {
     return tasks
   }
 
-  const revisions = parseRevisions(candidate.revisions, documentRevision)
+  const fixedEvents = parseFixedEvents(docRecord.fixedEvents, identifiers)
+  if (!fixedEvents.ok) {
+    return fixedEvents
+  }
+
+  const taskSessions = parseTaskSessions(docRecord.taskSessions, tasks.value, identifiers)
+  if (!taskSessions.ok) {
+    return taskSessions
+  }
+
+  const revisions = parseRevisions(docRecord.revisions, documentRevision)
   if (!revisions.ok) {
     return revisions
   }
 
   return success({
     schemaVersion: PLANNER_SCHEMA_VERSION,
-    timeZone: candidate.timeZone,
+    timeZone: docRecord.timeZone,
     revision: documentRevision,
     projects: projects.value,
     tasks: tasks.value,
+    fixedEvents: fixedEvents.value,
+    taskSessions: taskSessions.value,
     revisions: revisions.value,
   })
 }
 
-const parseProjects = (candidate: unknown): Result<Project[], BackupFailure> => {
+const parseProjects = (
+  candidate: unknown,
+  identifiers: Set<string>,
+): Result<Project[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
     return invalidBackup('Projects must be an array.')
   }
 
   const projects: Project[] = []
-  const identifiers = new Set<string>()
   for (const item of candidate) {
     if (
       !isRecord(item) ||
@@ -135,13 +184,13 @@ const parseProjects = (candidate: unknown): Result<Project[], BackupFailure> => 
 const parseTasks = (
   candidate: unknown,
   projects: Project[],
+  identifiers: Set<string>,
 ): Result<Task[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
     return invalidBackup('Tasks must be an array.')
   }
 
   const projectIds = new Set(projects.map((project) => project.id))
-  const identifiers = new Set(projects.map((project) => project.id))
   const tasks: Task[] = []
   for (const item of candidate) {
     if (
@@ -176,10 +225,105 @@ const parseTasks = (
   return success(tasks)
 }
 
+const parseFixedEvents = (
+  candidate: unknown,
+  identifiers: Set<string>,
+): Result<FixedEvent[], BackupFailure> => {
+  if (!Array.isArray(candidate)) {
+    return invalidBackup('Fixed events must be an array.')
+  }
+
+  const events: FixedEvent[] = []
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ['id', 'title', 'startAt', 'endAt', 'createdAt', 'updatedAt']) ||
+      !isIdentifier(item.id) ||
+      !isTitle(item.title)
+    ) {
+      return invalidBackup('Every fixed event needs a stable ID and a valid title.')
+    }
+    if (!isUtcTimestamp(item.startAt) || !isUtcTimestamp(item.endAt)) {
+      return invalidBackup('Every fixed event needs valid UTC start and end timestamps.')
+    }
+    if (Date.parse(item.startAt) >= Date.parse(item.endAt)) {
+      return invalidBackup('Fixed event start time must be before end time.')
+    }
+    if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
+      return invalidBackup('Every fixed event needs UTC creation and update timestamps.')
+    }
+    if (identifiers.has(item.id)) {
+      return invalidBackup('Document item IDs must be unique.')
+    }
+    identifiers.add(item.id)
+    events.push({
+      id: item.id,
+      title: item.title,
+      startAt: item.startAt,
+      endAt: item.endAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })
+  }
+  return success(events)
+}
+
+const parseTaskSessions = (
+  candidate: unknown,
+  tasks: Task[],
+  identifiers: Set<string>,
+): Result<TaskSession[], BackupFailure> => {
+  if (!Array.isArray(candidate)) {
+    return invalidBackup('Task sessions must be an array.')
+  }
+
+  const taskIds = new Set(tasks.map((task) => task.id))
+  const sessions: TaskSession[] = []
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ['id', 'taskId', 'startAt', 'endAt', 'createdAt', 'updatedAt']) ||
+      !isIdentifier(item.id) ||
+      !isIdentifier(item.taskId)
+    ) {
+      return invalidBackup('Every task session needs stable session and task IDs.')
+    }
+    if (!taskIds.has(item.taskId)) {
+      return invalidBackup('Every task session must belong to an imported task.')
+    }
+    if (!isUtcTimestamp(item.startAt) || !isUtcTimestamp(item.endAt)) {
+      return invalidBackup('Every task session needs valid UTC start and end timestamps.')
+    }
+    if (Date.parse(item.startAt) >= Date.parse(item.endAt)) {
+      return invalidBackup('Task session start time must be before end time.')
+    }
+    if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
+      return invalidBackup('Every task session needs UTC creation and update timestamps.')
+    }
+    if (identifiers.has(item.id)) {
+      return invalidBackup('Document item IDs must be unique.')
+    }
+    identifiers.add(item.id)
+    sessions.push({
+      id: item.id,
+      taskId: item.taskId,
+      startAt: item.startAt,
+      endAt: item.endAt,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })
+  }
+  return success(sessions)
+}
+
 const revisionKinds: readonly RevisionKind[] = [
   'project-created',
   'task-created',
   'task-completion-changed',
+  'fixed-event-created',
+  'fixed-event-deleted',
+  'task-session-created',
+  'task-session-deleted',
 ]
 
 const parseRevisions = (

@@ -102,6 +102,92 @@ export const usePlanner = ({
     [createId, document, now, workspace],
   )
 
+  const createFixedEvent = useCallback(
+    (title: string, startAt: string, endAt: string): boolean => {
+      const id = createId()
+      const result = workspace.execute(document, {
+        type: 'create-fixed-event',
+        id,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        title,
+        startAt,
+        endAt,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Fixed event saved.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteFixedEvent = useCallback(
+    (eventId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'delete-fixed-event',
+        id: eventId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        eventId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Fixed event deleted.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const createTaskSession = useCallback(
+    (taskId: string, startAt: string, endAt: string): boolean => {
+      const id = createId()
+      const result = workspace.execute(document, {
+        type: 'create-task-session',
+        id,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        startAt,
+        endAt,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Task session scheduled.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteTaskSession = useCallback(
+    (sessionId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'delete-task-session',
+        id: sessionId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        sessionId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Session removed.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
   const restore = useCallback(
     (raw: string): boolean => {
       const result = workspace.restore(raw)
@@ -127,8 +213,12 @@ export const usePlanner = ({
   }, [document, workspace])
 
   return {
+    createFixedEvent,
     createProject,
     createTask,
+    createTaskSession,
+    deleteFixedEvent,
+    deleteTaskSession,
     document,
     exportBackup,
     notice,

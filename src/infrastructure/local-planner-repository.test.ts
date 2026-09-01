@@ -4,9 +4,9 @@ import type { PlannerDocument } from '../domain/model'
 import { LocalPlannerRepository, plannerStorageKey } from './local-planner-repository'
 
 const document: PlannerDocument = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   timeZone: 'Europe/London',
-  revision: 2,
+  revision: 4,
   projects: [
     {
       id: 'project-1',
@@ -25,6 +25,26 @@ const document: PlannerDocument = {
       updatedAt: '2026-09-01T09:01:00.000Z',
     },
   ],
+  fixedEvents: [
+    {
+      id: 'event-1',
+      title: 'Faculty Meeting',
+      startAt: '2026-09-01T10:00:00.000Z',
+      endAt: '2026-09-01T11:00:00.000Z',
+      createdAt: '2026-09-01T09:02:00.000Z',
+      updatedAt: '2026-09-01T09:02:00.000Z',
+    },
+  ],
+  taskSessions: [
+    {
+      id: 'session-1',
+      taskId: 'task-1',
+      startAt: '2026-09-01T14:00:00.000Z',
+      endAt: '2026-09-01T15:00:00.000Z',
+      createdAt: '2026-09-01T09:03:00.000Z',
+      updatedAt: '2026-09-01T09:03:00.000Z',
+    },
+  ],
   revisions: [
     {
       id: 'revision-1',
@@ -39,6 +59,20 @@ const document: PlannerDocument = {
       kind: 'task-created',
       reason: 'Added task “Outline week one”.',
       occurredAt: '2026-09-01T09:01:00.000Z',
+    },
+    {
+      id: 'revision-3',
+      number: 3,
+      kind: 'fixed-event-created',
+      reason: 'Created fixed event “Faculty Meeting”.',
+      occurredAt: '2026-09-01T09:02:00.000Z',
+    },
+    {
+      id: 'revision-4',
+      number: 4,
+      kind: 'task-session-created',
+      reason: 'Scheduled session for task “Outline week one”.',
+      occurredAt: '2026-09-01T09:03:00.000Z',
     },
   ],
 }
@@ -56,7 +90,7 @@ class MemoryStorage {
 }
 
 describe('LocalPlannerRepository', () => {
-  it('round-trips a complete project and task backup exactly', () => {
+  it('round-trips a complete project, task, event, and session backup exactly', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -70,6 +104,29 @@ describe('LocalPlannerRepository', () => {
     const before = serialiseBackup(document)
     const after = serialiseBackup(restored.value)
     expect(after).toEqual(before)
+  })
+
+  it('seamlessly migrates version 1 backups into version 2', () => {
+    const storage = new MemoryStorage()
+    const repository = new LocalPlannerRepository(storage)
+
+    const v1Raw = JSON.stringify({
+      schemaVersion: 1,
+      timeZone: 'Europe/London',
+      revision: 2,
+      projects: document.projects,
+      tasks: document.tasks,
+      revisions: document.revisions.slice(0, 2),
+    })
+
+    const restored = repository.restore(v1Raw)
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) throw new Error('Expected successful restore')
+
+    expect(restored.value.schemaVersion).toBe(2)
+    expect(restored.value.fixedEvents).toEqual([])
+    expect(restored.value.taskSessions).toEqual([])
+    expect(restored.value.projects).toEqual(document.projects)
   })
 
   it('does not overwrite existing local data when an import is invalid', () => {

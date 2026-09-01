@@ -33,12 +33,34 @@ export type PlannerCommand =
       taskId: string
       completed: boolean
     })
+  | (CommandMetadata & {
+      type: 'create-fixed-event'
+      title: string
+      startAt: string
+      endAt: string
+    })
+  | (CommandMetadata & {
+      type: 'delete-fixed-event'
+      eventId: string
+    })
+  | (CommandMetadata & {
+      type: 'create-task-session'
+      taskId: string
+      startAt: string
+      endAt: string
+    })
+  | (CommandMetadata & {
+      type: 'delete-task-session'
+      sessionId: string
+    })
 
 export interface CommandFailure {
   code:
     | 'invalid-command'
     | 'project-not-found'
     | 'task-not-found'
+    | 'fixed-event-not-found'
+    | 'task-session-not-found'
     | 'duplicate-id'
   message: string
 }
@@ -67,6 +89,14 @@ export const executeCommand = (
       return createTask(document, command)
     case 'set-task-completion':
       return setTaskCompletion(document, command)
+    case 'create-fixed-event':
+      return createFixedEvent(document, command)
+    case 'delete-fixed-event':
+      return deleteFixedEvent(document, command)
+    case 'create-task-session':
+      return createTaskSession(document, command)
+    case 'delete-task-session':
+      return deleteTaskSession(document, command)
   }
 }
 
@@ -160,12 +190,136 @@ const setTaskCompletion = (
   })
 }
 
+const createFixedEvent = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-fixed-event' }>,
+): CommandResult => {
+  const title = normaliseTitle(command.title)
+  if (!title) {
+    return invalidCommand('Event titles must contain between 1 and 200 characters.')
+  }
+
+  const timeIssue = validateTimeRange(command.startAt, command.endAt)
+  if (timeIssue) {
+    return failure(timeIssue)
+  }
+
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const event = {
+    id: command.id,
+    title,
+    startAt: command.startAt,
+    endAt: command.endAt,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  return revised(document, command, 'fixed-event-created', `Created fixed event “${title}”.`, {
+    fixedEvents: [...document.fixedEvents, event],
+  })
+}
+
+const deleteFixedEvent = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'delete-fixed-event' }>,
+): CommandResult => {
+  const event = document.fixedEvents.find((candidate) => candidate.id === command.eventId)
+  if (!event) {
+    return failure({
+      code: 'fixed-event-not-found',
+      message: 'That fixed event no longer exists.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  return revised(document, command, 'fixed-event-deleted', `Deleted fixed event “${event.title}”.`, {
+    fixedEvents: document.fixedEvents.filter((candidate) => candidate.id !== command.eventId),
+  })
+}
+
+const createTaskSession = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-task-session' }>,
+): CommandResult => {
+  const task = document.tasks.find((candidate) => candidate.id === command.taskId)
+  if (!task) {
+    return failure({
+      code: 'task-not-found',
+      message: 'Cannot schedule a session for a task that does not exist.',
+    })
+  }
+
+  const timeIssue = validateTimeRange(command.startAt, command.endAt)
+  if (timeIssue) {
+    return failure(timeIssue)
+  }
+
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const session = {
+    id: command.id,
+    taskId: command.taskId,
+    startAt: command.startAt,
+    endAt: command.endAt,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  return revised(
+    document,
+    command,
+    'task-session-created',
+    `Scheduled session for task “${task.title}”.`,
+    {
+      taskSessions: [...document.taskSessions, session],
+    },
+  )
+}
+
+const deleteTaskSession = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'delete-task-session' }>,
+): CommandResult => {
+  const session = document.taskSessions.find((candidate) => candidate.id === command.sessionId)
+  if (!session) {
+    return failure({
+      code: 'task-session-not-found',
+      message: 'That task session no longer exists.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const task = document.tasks.find((candidate) => candidate.id === session.taskId)
+  const taskTitle = task ? `for “${task.title}” ` : ''
+
+  return revised(
+    document,
+    command,
+    'task-session-deleted',
+    `Removed scheduled session ${taskTitle}.`.trim(),
+    {
+      taskSessions: document.taskSessions.filter((candidate) => candidate.id !== command.sessionId),
+    },
+  )
+}
+
 const revised = (
   document: PlannerDocument,
   command: CommandMetadata,
   kind: RevisionKind,
   fallbackReason: string,
-  changes: Pick<PlannerDocument, 'projects'> | Pick<PlannerDocument, 'tasks'>,
+  changes: Partial<Pick<PlannerDocument, 'projects' | 'tasks' | 'fixedEvents' | 'taskSessions'>>,
 ): CommandResult => {
   const reason = normaliseReason(command.reason) ?? fallbackReason
   const revision: Revision = {
@@ -214,6 +368,24 @@ const validateMetadata = (command: CommandMetadata): CommandFailure | undefined 
   return undefined
 }
 
+const validateTimeRange = (startAt: string, endAt: string): CommandFailure | undefined => {
+  if (!isUtcTimestamp(startAt) || !isUtcTimestamp(endAt)) {
+    return {
+      code: 'invalid-command',
+      message: 'Start and end times must be valid UTC timestamps.',
+    }
+  }
+
+  if (Date.parse(startAt) >= Date.parse(endAt)) {
+    return {
+      code: 'invalid-command',
+      message: 'Start time must be before end time.',
+    }
+  }
+
+  return undefined
+}
+
 const normaliseTitle = (value: string): string | undefined => {
   const title = value.trim()
   return title.length > 0 && title.length <= maximumTitleLength ? title : undefined
@@ -229,7 +401,9 @@ const normaliseReason = (value: string | undefined): string | undefined => {
 
 const hasId = (document: PlannerDocument, id: string): boolean =>
   document.projects.some((project) => project.id === id) ||
-  document.tasks.some((task) => task.id === id)
+  document.tasks.some((task) => task.id === id) ||
+  document.fixedEvents.some((event) => event.id === id) ||
+  document.taskSessions.some((session) => session.id === id)
 
 const hasRevisionId = (document: PlannerDocument, id: string): boolean =>
   document.revisions.some((revision) => revision.id === id)

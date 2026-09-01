@@ -1,9 +1,13 @@
-export const PLANNER_SCHEMA_VERSION = 1 as const
+export const PLANNER_SCHEMA_VERSION = 2 as const
 
 export type RevisionKind =
   | 'project-created'
   | 'task-created'
   | 'task-completion-changed'
+  | 'fixed-event-created'
+  | 'fixed-event-deleted'
+  | 'task-session-created'
+  | 'task-session-deleted'
 
 export interface Project {
   id: string
@@ -17,6 +21,24 @@ export interface Task {
   projectId: string
   title: string
   completed: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FixedEvent {
+  id: string
+  title: string
+  startAt: string
+  endAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskSession {
+  id: string
+  taskId: string
+  startAt: string
+  endAt: string
   createdAt: string
   updatedAt: string
 }
@@ -35,6 +57,8 @@ export interface PlannerDocument {
   revision: number
   projects: Project[]
   tasks: Task[]
+  fixedEvents: FixedEvent[]
+  taskSessions: TaskSession[]
   revisions: Revision[]
 }
 
@@ -44,5 +68,7 @@ export const createEmptyPlannerDocument = (timeZone = 'UTC'): PlannerDocument =>
   revision: 0,
   projects: [],
   tasks: [],
+  fixedEvents: [],
+  taskSessions: [],
   revisions: [],
 })
