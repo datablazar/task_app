@@ -6,7 +6,7 @@
 
 | Item | Current truth |
 |---|---|
-| State | Spatial UX Refactor, Schema v8, Named Schedules & Recurrence Engine delivered. |
+| State | Lumina V3 Spatial Glass & Aurora UI, Schema v8, Named Schedules & Recurrence Engine delivered. |
 | Active milestone | **I6 — Reviewable inbox & capture workspace** |
 | Next bounded outcome | Unstructured capture staging, source linking and bulk conversion to validated tasks. |
 | Evidence required | Staged notes never directly mutate calendar until confirmed; exact Undo and zero data loss. |
@@ -85,7 +85,7 @@ For I4, each capability selects a qualified implementation independently after l
 |---|---|---|
 | Deterministic planner; optional interpretation only returns checked proposals. | Reproducible, offline-safe, explainable and undoable planning with help for incomplete input. | Golden cases show the boundary cannot meet the outcome. |
 | Local versioned data (Schema v8) plus tested export/import first. | Proves one-person value without account, synchronisation, privacy or infrastructure overhead. | A demonstrated multi-device, recovery or remote-work need exceeds local backup. |
-| Editorial Spatial UI (NavDock, multi-mode left drawer, right task inspector, dominant white calendar card). | High-density, calm personal command centre matching editorial desktop workflows. | User research demonstrates a need for multi-window spatial canvases. |
+| Lumina V3 Spatial Glass & Aurora UI (Floating capsule NavDock, multi-mode left drawer, right task inspector, dominant frosted calendar canvas with tasteful translucent multi-tone glass cards). | High-density, calm personal command centre combining tactile wow-factor with professional rigor and zero functional regressions. | User research demonstrates a need for multi-window spatial canvases. |
 | Modular monolith with domain, planner and repository boundaries. | Cheap and understandable now; retains real extraction paths. | A second application or deployed boundary genuinely consumes a module. |
 | Remote capability, external calendar access and file processing follow a proven local core, one vertical capability at a time. | Avoids premature cost, privacy, conflict and integration work. | The preceding gate passes and a user benefit cannot be met locally. |
 
