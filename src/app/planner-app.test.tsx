@@ -160,4 +160,58 @@ describe('PlannerApp', () => {
     expect(saved).toContain('parentTaskId')
     expect(saved).toContain('45')
   })
+
+  it('generates a reference schedule respecting dependencies and allows exact undo', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z') // Tuesday 9am
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'App Redesign')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Create Task 1
+    const taskInput = screen.getByPlaceholderText('Add a task')
+    await user.type(taskInput, 'Wireframes{enter}')
+    expect(screen.getByText('Wireframes')).toBeVisible()
+
+    // Create Task 2
+    await user.type(taskInput, 'Mockups{enter}')
+    expect(screen.getByText('Mockups')).toBeVisible()
+
+    // Add dependency: Mockups depends on Wireframes
+    await user.click(screen.getByRole('button', { name: 'Edit constraints for Mockups' }))
+
+    const prereqSelect = screen.getByLabelText(/depends on prerequisite task/i)
+    await user.selectOptions(prereqSelect, 'Wireframes')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByText('🔗 After: Wireframes')).toBeVisible()
+
+    // Click Auto-Plan Week
+    const autoPlanBtn = screen.getByRole('button', { name: /auto-plan week/i })
+    await user.click(autoPlanBtn)
+
+    // Expect status message and scheduled badges
+    expect(screen.getByRole('status')).toHaveTextContent(/Scheduled 2 session\(s\)/i)
+
+    // Verify Undo Plan button appears and click it
+    const undoBtn = screen.getByRole('button', { name: /↶ undo plan/i })
+    expect(undoBtn).toBeVisible()
+    await user.click(undoBtn)
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Reverted to previous schedule/i)
+  })
 })

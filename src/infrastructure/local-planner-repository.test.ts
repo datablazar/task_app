@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { serialiseBackup } from '../domain/backup'
+import { DEFAULT_AVAILABILITY } from '../domain/model'
 import type { PlannerDocument } from '../domain/model'
 import { LocalPlannerRepository, plannerStorageKey } from './local-planner-repository'
 
 const document: PlannerDocument = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   timeZone: 'Europe/London',
-  revision: 5,
+  revision: 6,
   projects: [
     {
       id: 'project-1',
@@ -37,6 +38,15 @@ const document: PlannerDocument = {
       updatedAt: '2026-09-01T09:02:00.000Z',
     },
   ],
+  dependencies: [
+    {
+      id: 'dep-1',
+      fromTaskId: 'task-1',
+      toTaskId: 'subtask-1',
+      createdAt: '2026-09-01T09:02:30.000Z',
+    },
+  ],
+  availability: DEFAULT_AVAILABILITY,
   fixedEvents: [
     {
       id: 'event-1',
@@ -82,13 +92,20 @@ const document: PlannerDocument = {
     {
       id: 'revision-4',
       number: 4,
+      kind: 'dependency-created',
+      reason: 'Set “Draft syllabus section” to depend on “Outline week one”.',
+      occurredAt: '2026-09-01T09:02:30.000Z',
+    },
+    {
+      id: 'revision-5',
+      number: 5,
       kind: 'fixed-event-created',
       reason: 'Created fixed event “Faculty Meeting”.',
       occurredAt: '2026-09-01T09:02:00.000Z',
     },
     {
-      id: 'revision-5',
-      number: 5,
+      id: 'revision-6',
+      number: 6,
       kind: 'task-session-created',
       reason: 'Scheduled session for task “Outline week one”.',
       occurredAt: '2026-09-01T09:03:00.000Z',
@@ -109,7 +126,7 @@ class MemoryStorage {
 }
 
 describe('LocalPlannerRepository', () => {
-  it('round-trips a complete project, task, subtask, event, and session backup exactly', () => {
+  it('round-trips a complete project, task, subtask, dependency, availability, event, and session backup exactly', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -125,7 +142,7 @@ describe('LocalPlannerRepository', () => {
     expect(after).toEqual(before)
   })
 
-  it('seamlessly migrates version 1 and 2 backups into version 3', () => {
+  it('seamlessly migrates version 1, 2, and 3 backups into version 4', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -142,27 +159,30 @@ describe('LocalPlannerRepository', () => {
     const restoredV1 = repository.restore(v1Raw)
     expect(restoredV1.ok).toBe(true)
     if (!restoredV1.ok) throw new Error('Expected successful restore')
-    expect(restoredV1.value.schemaVersion).toBe(3)
+    expect(restoredV1.value.schemaVersion).toBe(4)
     expect(restoredV1.value.fixedEvents).toEqual([])
     expect(restoredV1.value.taskSessions).toEqual([])
+    expect(restoredV1.value.dependencies).toEqual([])
+    expect(restoredV1.value.availability).toEqual(DEFAULT_AVAILABILITY)
 
-    // Migration from v2
-    const v2Raw = JSON.stringify({
-      schemaVersion: 2,
+    // Migration from v3
+    const v3Raw = JSON.stringify({
+      schemaVersion: 3,
       timeZone: 'Europe/London',
-      revision: 4,
+      revision: 3,
       projects: document.projects,
-      tasks: [document.tasks[0]],
+      tasks: document.tasks,
       fixedEvents: document.fixedEvents,
       taskSessions: document.taskSessions,
-      revisions: document.revisions.slice(0, 4),
+      revisions: document.revisions.slice(0, 3),
     })
 
-    const restoredV2 = repository.restore(v2Raw)
-    expect(restoredV2.ok).toBe(true)
-    if (!restoredV2.ok) throw new Error('Expected successful restore')
-    expect(restoredV2.value.schemaVersion).toBe(3)
-    expect(restoredV2.value.fixedEvents).toEqual(document.fixedEvents)
+    const restoredV3 = repository.restore(v3Raw)
+    expect(restoredV3.ok).toBe(true)
+    if (!restoredV3.ok) throw new Error('Expected successful restore')
+    expect(restoredV3.value.schemaVersion).toBe(4)
+    expect(restoredV3.value.dependencies).toEqual([])
+    expect(restoredV3.value.availability).toEqual(DEFAULT_AVAILABILITY)
   })
 
   it('does not overwrite existing local data when an import is invalid', () => {
@@ -181,6 +201,20 @@ describe('LocalPlannerRepository', () => {
         JSON.stringify({
           ...document,
           tasks: [{ ...document.tasks[0], projectId: 'missing-project' }],
+        }),
+        'invalid-backup',
+      ],
+      [
+        JSON.stringify({
+          ...document,
+          dependencies: [
+            {
+              id: 'dep-cycle-1',
+              fromTaskId: document.tasks[0].id,
+              toTaskId: document.tasks[0].id,
+              createdAt: '2026-09-01T09:00:00.000Z',
+            },
+          ],
         }),
         'invalid-backup',
       ],

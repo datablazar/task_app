@@ -1,12 +1,17 @@
 import { failure, success } from './result'
 import type {
+  AvailabilityWindow,
+  Dependency,
+  FixedEvent,
   PlannerDocument,
   Project,
   Revision,
   RevisionKind,
   Task,
+  TaskSession,
 } from './model'
 import type { Result } from './result'
+import { hasDependencyCycle } from './dependency-graph'
 
 const maximumTitleLength = 200
 const maximumReasonLength = 300
@@ -27,6 +32,19 @@ export type PlannerCommand =
       type: 'create-task'
       projectId: string
       title: string
+    })
+  | (CommandMetadata & {
+      type: 'create-subtask'
+      projectId: string
+      parentTaskId: string
+      title: string
+    })
+  | (CommandMetadata & {
+      type: 'update-task-constraints'
+      taskId: string
+      estimateMinutes?: number
+      dueAt?: string
+      earliestStartAt?: string
     })
   | (CommandMetadata & {
       type: 'set-task-completion'
@@ -54,17 +72,24 @@ export type PlannerCommand =
       sessionId: string
     })
   | (CommandMetadata & {
-      type: 'create-subtask'
-      projectId: string
-      parentTaskId: string
-      title: string
+      type: 'create-dependency'
+      fromTaskId: string
+      toTaskId: string
     })
   | (CommandMetadata & {
-      type: 'update-task-constraints'
-      taskId: string
-      estimateMinutes?: number
-      dueAt?: string
-      earliestStartAt?: string
+      type: 'delete-dependency'
+      dependencyId: string
+    })
+  | (CommandMetadata & {
+      type: 'apply-plan'
+      sessions: TaskSession[]
+    })
+  | (CommandMetadata & {
+      type: 'undo-last-plan'
+    })
+  | (CommandMetadata & {
+      type: 'update-availability'
+      workingWindows: AvailabilityWindow[]
     })
 
 export interface CommandFailure {
@@ -73,6 +98,7 @@ export interface CommandFailure {
     | 'project-not-found'
     | 'task-not-found'
     | 'parent-task-not-found'
+    | 'dependency-not-found'
     | 'fixed-event-not-found'
     | 'task-session-not-found'
     | 'duplicate-id'
@@ -115,6 +141,16 @@ export const executeCommand = (
       return createTaskSession(document, command)
     case 'delete-task-session':
       return deleteTaskSession(document, command)
+    case 'create-dependency':
+      return createDependency(document, command)
+    case 'delete-dependency':
+      return deleteDependency(document, command)
+    case 'apply-plan':
+      return applyPlan(document, command)
+    case 'undo-last-plan':
+      return undoLastPlan(document, command)
+    case 'update-availability':
+      return updateAvailability(document, command)
   }
 }
 
@@ -324,13 +360,19 @@ const setTaskCompletion = (
     completed,
     updatedAt: command.occurredAt,
   }
-  const reason = completed ? `Completed task “${task.title}”.` : `Reopened task “${task.title}”.`
 
-  return revised(document, command, 'task-completion-changed', reason, {
-    tasks: document.tasks.map((candidate) =>
-      candidate.id === task.id ? nextTask : candidate,
-    ),
-  })
+  const action = completed ? 'Completed' : 'Reopened'
+  return revised(
+    document,
+    command,
+    'task-completion-changed',
+    `${action} task “${task.title}”.`,
+    {
+      tasks: document.tasks.map((candidate) =>
+        candidate.id === task.id ? nextTask : candidate,
+      ),
+    },
+  )
 }
 
 const createFixedEvent = (
@@ -351,7 +393,7 @@ const createFixedEvent = (
     return duplicateId()
   }
 
-  const event = {
+  const event: FixedEvent = {
     id: command.id,
     title,
     startAt: command.startAt,
@@ -407,7 +449,7 @@ const createTaskSession = (
     return duplicateId()
   }
 
-  const session = {
+  const session: TaskSession = {
     id: command.id,
     taskId: command.taskId,
     startAt: command.startAt,
@@ -443,16 +485,182 @@ const deleteTaskSession = (
     return duplicateId()
   }
 
-  const task = document.tasks.find((candidate) => candidate.id === session.taskId)
-  const taskTitle = task ? `for “${task.title}” ` : ''
+  return revised(document, command, 'task-session-deleted', 'Deleted task session.', {
+    taskSessions: document.taskSessions.filter((candidate) => candidate.id !== command.sessionId),
+  })
+}
+
+const createDependency = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-dependency' }>,
+): CommandResult => {
+  if (command.fromTaskId === command.toTaskId) {
+    return invalidCommand('A task cannot depend on itself.')
+  }
+
+  const fromTask = document.tasks.find((t) => t.id === command.fromTaskId)
+  const toTask = document.tasks.find((t) => t.id === command.toTaskId)
+
+  if (!fromTask || !toTask) {
+    return failure({
+      code: 'task-not-found',
+      message: 'Both dependent and prerequisite tasks must exist.',
+    })
+  }
+
+  const alreadyExists = document.dependencies.some(
+    (d) => d.fromTaskId === command.fromTaskId && d.toTaskId === command.toTaskId,
+  )
+  if (alreadyExists) {
+    return invalidCommand('This dependency relationship already exists.')
+  }
+
+  if (
+    hasDependencyCycle(document.dependencies, {
+      fromTaskId: command.fromTaskId,
+      toTaskId: command.toTaskId,
+    })
+  ) {
+    return invalidCommand('Adding this dependency would create a circular dependency.')
+  }
+
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const dependency: Dependency = {
+    id: command.id,
+    fromTaskId: command.fromTaskId,
+    toTaskId: command.toTaskId,
+    createdAt: command.occurredAt,
+  }
 
   return revised(
     document,
     command,
-    'task-session-deleted',
-    `Removed scheduled session ${taskTitle}.`.trim(),
+    'dependency-created',
+    `Set “${toTask.title}” to depend on “${fromTask.title}”.`,
     {
-      taskSessions: document.taskSessions.filter((candidate) => candidate.id !== command.sessionId),
+      dependencies: [...document.dependencies, dependency],
+    },
+  )
+}
+
+const deleteDependency = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'delete-dependency' }>,
+): CommandResult => {
+  const dep = document.dependencies.find((d) => d.id === command.dependencyId)
+  if (!dep) {
+    return failure({
+      code: 'dependency-not-found',
+      message: 'That dependency no longer exists.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  return revised(
+    document,
+    command,
+    'dependency-deleted',
+    'Removed task dependency.',
+    {
+      dependencies: document.dependencies.filter((d) => d.id !== command.dependencyId),
+    },
+  )
+}
+
+const applyPlan = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'apply-plan' }>,
+): CommandResult => {
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const previousSnapshot = JSON.stringify(document.taskSessions)
+
+  return revised(
+    document,
+    command,
+    'schedule-planned',
+    `Applied reference schedule (${command.sessions.length} session(s) allocated).`,
+    {
+      taskSessions: command.sessions,
+    },
+    previousSnapshot,
+  )
+}
+
+const undoLastPlan = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'undo-last-plan' }>,
+): CommandResult => {
+  const targetRevision = [...document.revisions]
+    .reverse()
+    .find((r) => r.kind === 'schedule-planned' && r.snapshot)
+
+  if (!targetRevision || !targetRevision.snapshot) {
+    return failure({
+      code: 'invalid-command',
+      message: 'No previous schedule plan to undo.',
+    })
+  }
+
+  let restoredSessions: TaskSession[]
+  try {
+    restoredSessions = JSON.parse(targetRevision.snapshot) as TaskSession[]
+  } catch {
+    return invalidCommand('Failed to parse previous schedule snapshot.')
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  return revised(
+    document,
+    command,
+    'plan-undone',
+    'Reverted to previous schedule.',
+    {
+      taskSessions: restoredSessions,
+    },
+  )
+}
+
+const updateAvailability = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'update-availability' }>,
+): CommandResult => {
+  for (const win of command.workingWindows) {
+    if (
+      win.dayOfWeek < 1 ||
+      win.dayOfWeek > 7 ||
+      win.startHour < 0 ||
+      win.endHour > 24 ||
+      win.startHour >= win.endHour
+    ) {
+      return invalidCommand('Availability window hours must be valid (0-24) with start before end.')
+    }
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  return revised(
+    document,
+    command,
+    'dependency-created',
+    'Updated working availability hours.',
+    {
+      availability: {
+        workingWindows: command.workingWindows,
+      },
     },
   )
 }
@@ -462,7 +670,13 @@ const revised = (
   command: CommandMetadata,
   kind: RevisionKind,
   fallbackReason: string,
-  changes: Partial<Pick<PlannerDocument, 'projects' | 'tasks' | 'fixedEvents' | 'taskSessions'>>,
+  changes: Partial<
+    Pick<
+      PlannerDocument,
+      'projects' | 'tasks' | 'dependencies' | 'availability' | 'fixedEvents' | 'taskSessions'
+    >
+  >,
+  snapshot?: string,
 ): CommandResult => {
   const reason = normaliseReason(command.reason) ?? fallbackReason
   const revision: Revision = {
@@ -472,6 +686,10 @@ const revised = (
     reason,
     occurredAt: command.occurredAt,
   }
+  if (snapshot) {
+    revision.snapshot = snapshot
+  }
+
   const nextDocument: PlannerDocument = {
     ...document,
     ...changes,
@@ -545,6 +763,7 @@ const normaliseReason = (value: string | undefined): string | undefined => {
 const hasId = (document: PlannerDocument, id: string): boolean =>
   document.projects.some((project) => project.id === id) ||
   document.tasks.some((task) => task.id === id) ||
+  document.dependencies.some((dep) => dep.id === id) ||
   document.fixedEvents.some((event) => event.id === id) ||
   document.taskSessions.some((session) => session.id === id)
 

@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
 import { useMemo, useState } from 'react'
 import { BackupControls } from './backup-controls'
-import type { Project, Task, TaskSession } from '../../domain/model'
+import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
 
 interface TaskPanelProps {
   onCreateTask: (projectId: string, title: string) => boolean
@@ -10,6 +10,8 @@ interface TaskPanelProps {
     taskId: string,
     constraints: { estimateMinutes?: number; dueAt?: string; earliestStartAt?: string },
   ) => boolean
+  onCreateDependency?: (fromTaskId: string, toTaskId: string) => boolean
+  onDeleteDependency?: (dependencyId: string) => boolean
   onExport: () => void
   onImport: (file: File) => void
   onSelectTaskId?: (taskId: string) => void
@@ -17,6 +19,7 @@ interface TaskPanelProps {
   project: Project | undefined
   selectedTaskId?: string | null
   taskSessions?: TaskSession[]
+  dependencies?: Dependency[]
   tasks: Task[]
 }
 
@@ -24,6 +27,8 @@ export const TaskPanel = ({
   onCreateTask,
   onCreateSubtask,
   onUpdateTaskConstraints,
+  onCreateDependency,
+  onDeleteDependency,
   onExport,
   onImport,
   onSelectTaskId,
@@ -31,6 +36,7 @@ export const TaskPanel = ({
   project,
   selectedTaskId,
   taskSessions = [],
+  dependencies = [],
   tasks,
 }: TaskPanelProps) => {
   const [title, setTitle] = useState('')
@@ -41,6 +47,7 @@ export const TaskPanel = ({
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
   const [editMinutes, setEditMinutes] = useState<string>('')
   const [editDueAt, setEditDueAt] = useState<string>('')
+  const [selectedPrereqId, setSelectedPrereqId] = useState<string>('')
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -61,21 +68,29 @@ export const TaskPanel = ({
     setEditingConstraintTaskId(task.id)
     setEditMinutes(task.estimateMinutes ? String(task.estimateMinutes) : '')
     setEditDueAt(task.dueAt ? task.dueAt.slice(0, 10) : '')
+    setSelectedPrereqId('')
   }
 
   const submitConstraints = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editingConstraintTaskId || !onUpdateTaskConstraints) return
+    if (!editingConstraintTaskId) return
 
-    const parsedMinutes = editMinutes.trim() ? parseInt(editMinutes, 10) : undefined
-    const parsedDueAt = editDueAt.trim()
-      ? new Date(`${editDueAt.trim()}T23:59:59.000Z`).toISOString()
-      : undefined
+    if (onUpdateTaskConstraints) {
+      const parsedMinutes = editMinutes.trim() ? parseInt(editMinutes, 10) : undefined
+      const parsedDueAt = editDueAt.trim()
+        ? new Date(`${editDueAt.trim()}T23:59:59.000Z`).toISOString()
+        : undefined
 
-    onUpdateTaskConstraints(editingConstraintTaskId, {
-      estimateMinutes: parsedMinutes,
-      dueAt: parsedDueAt,
-    })
+      onUpdateTaskConstraints(editingConstraintTaskId, {
+        estimateMinutes: parsedMinutes,
+        dueAt: parsedDueAt,
+      })
+    }
+
+    if (selectedPrereqId && onCreateDependency) {
+      onCreateDependency(selectedPrereqId, editingConstraintTaskId)
+    }
+
     setEditingConstraintTaskId(null)
   }
 
@@ -86,6 +101,21 @@ export const TaskPanel = ({
     }
     return map
   }, [taskSessions])
+
+  const taskMap = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+
+  const prerequisitesByTaskId = useMemo(() => {
+    const map = new Map<string, { dependencyId: string; fromTask: Task }[]>()
+    for (const dep of dependencies) {
+      const from = taskMap.get(dep.fromTaskId)
+      if (from) {
+        const list = map.get(dep.toTaskId) ?? []
+        list.push({ dependencyId: dep.id, fromTask: from })
+        map.set(dep.toTaskId, list)
+      }
+    }
+    return map
+  }, [dependencies, taskMap])
 
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parentTaskId), [tasks])
 
@@ -105,6 +135,7 @@ export const TaskPanel = ({
     const sessionCount = sessionCountByTask.get(task.id) ?? 0
     const isSelected = selectedTaskId === task.id
     const childSubtasks = subtasksByParent.get(task.id) ?? []
+    const prereqs = prerequisitesByTaskId.get(task.id) ?? []
 
     return (
       <li key={task.id} className={isSubtask ? 'subtask-item' : 'task-item'}>
@@ -140,6 +171,22 @@ export const TaskPanel = ({
                   📅 {new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(task.dueAt))}
                 </span>
               ) : null}
+
+              {prereqs.map((prereq) => (
+                <span className="task-constraint-badge" key={prereq.dependencyId} title="Prerequisite task">
+                  🔗 After: {prereq.fromTask.title}
+                  {onDeleteDependency ? (
+                    <button
+                      aria-label={`Remove dependency on ${prereq.fromTask.title}`}
+                      className="task-dep-remove"
+                      onClick={() => onDeleteDependency(prereq.dependencyId)}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </span>
+              ))}
 
               {sessionCount > 0 ? (
                 <span className="task-badge" title={`${sessionCount} session(s) scheduled`}>
@@ -217,6 +264,16 @@ export const TaskPanel = ({
     ? tasks.find((t) => t.id === editingConstraintTaskId)
     : null
 
+  const availablePrereqOptions = useMemo(() => {
+    if (!editingTask) return []
+    const existingPrereqIds = new Set(
+      dependencies.filter((d) => d.toTaskId === editingTask.id).map((d) => d.fromTaskId),
+    )
+    return tasks.filter(
+      (t) => t.id !== editingTask.id && !existingPrereqIds.has(t.id),
+    )
+  }, [dependencies, editingTask, tasks])
+
   return (
     <aside className="task-panel" aria-labelledby="selected-project-heading">
       {project ? (
@@ -260,7 +317,7 @@ export const TaskPanel = ({
       {editingTask ? (
         <div aria-modal="true" className="calendar-dialog-overlay" role="dialog">
           <div className="calendar-dialog">
-            <h2>Task Constraints</h2>
+            <h2>Task Constraints & Dependencies</h2>
             <p className="calendar-dialog__sub">{editingTask.title}</p>
             <form onSubmit={submitConstraints}>
               <div className="calendar-dialog__field">
@@ -285,6 +342,24 @@ export const TaskPanel = ({
                   value={editDueAt}
                 />
               </div>
+
+              {availablePrereqOptions.length > 0 ? (
+                <div className="calendar-dialog__field">
+                  <label htmlFor="constraint-prereq">Depends on prerequisite task</label>
+                  <select
+                    id="constraint-prereq"
+                    onChange={(e) => setSelectedPrereqId(e.target.value)}
+                    value={selectedPrereqId}
+                  >
+                    <option value="">None / No additional prerequisite</option>
+                    {availablePrereqOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="calendar-dialog__actions">
                 <button

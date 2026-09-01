@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { FixedEvent, Task, TaskSession } from '../../domain/model'
+import type { FixedEvent, PlanRisk, Task, TaskSession } from '../../domain/model'
 
 interface CalendarPreviewProps {
   hasProjects: boolean
@@ -14,6 +14,8 @@ interface CalendarPreviewProps {
   onScheduleTaskSession: (taskId: string, startAt: string, endAt: string) => boolean
   onDeleteFixedEvent: (eventId: string) => boolean
   onDeleteTaskSession: (sessionId: string) => boolean
+  onAutoPlan?: () => void
+  risks?: PlanRisk[]
 }
 
 interface ActiveSlot {
@@ -37,6 +39,8 @@ export const CalendarPreview = ({
   onScheduleTaskSession,
   onDeleteFixedEvent,
   onDeleteTaskSession,
+  onAutoPlan,
+  risks = [],
 }: CalendarPreviewProps) => {
   const [weekOffset, setWeekOffset] = useState(0)
 
@@ -104,32 +108,53 @@ export const CalendarPreview = ({
         <div className="calendar-panel__header-info">
           <h1 id="calendar-heading">{heading}</h1>
         </div>
-        <div className="calendar-nav">
-          <button
-            aria-label="Previous week"
-            className="calendar-nav__btn"
-            onClick={() => setWeekOffset((w) => w - 7)}
-            type="button"
-          >
-            ‹
-          </button>
-          <button
-            className="calendar-nav__today"
-            onClick={() => setWeekOffset(0)}
-            type="button"
-          >
-            Today
-          </button>
-          <button
-            aria-label="Next week"
-            className="calendar-nav__btn"
-            onClick={() => setWeekOffset((w) => w + 7)}
-            type="button"
-          >
-            ›
-          </button>
+        <div className="calendar-panel__actions">
+          {onAutoPlan ? (
+            <button
+              className="button button--primary button--small"
+              onClick={onAutoPlan}
+              type="button"
+            >
+              Auto-Plan Week
+            </button>
+          ) : null}
+          <div className="calendar-nav">
+            <button
+              aria-label="Previous week"
+              className="calendar-nav__btn"
+              onClick={() => setWeekOffset((w) => w - 7)}
+              type="button"
+            >
+              ‹
+            </button>
+            <button
+              className="calendar-nav__today"
+              onClick={() => setWeekOffset(0)}
+              type="button"
+            >
+              Today
+            </button>
+            <button
+              aria-label="Next week"
+              className="calendar-nav__btn"
+              onClick={() => setWeekOffset((w) => w + 7)}
+              type="button"
+            >
+              ›
+            </button>
+          </div>
         </div>
       </header>
+
+      {risks.length > 0 ? (
+        <div className="calendar-risks-banner" role="alert">
+          <span className="calendar-risks-banner__icon" aria-hidden="true">⚠️</span>
+          <div className="calendar-risks-banner__text">
+            <strong>{risks.length} Planning Risk(s):</strong>
+            <span> {risks[0]?.message}</span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="calendar-grid">
         <div className="calendar-grid__corner" />

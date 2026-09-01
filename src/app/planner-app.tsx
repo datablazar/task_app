@@ -98,6 +98,15 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
             </span>
             {planner.notice.message}
           </span>
+          {planner.canUndo ? (
+            <button
+              className="button button--secondary button--small"
+              onClick={planner.undoLastPlan}
+              type="button"
+            >
+              ↶ Undo Plan
+            </button>
+          ) : null}
         </div>
         <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
       </header>
@@ -114,18 +123,23 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           fixedEvents={planner.document.fixedEvents}
           hasProjects={planner.document.projects.length > 0}
           hasTasks={planner.document.tasks.length > 0}
+          onAutoPlan={() => planner.generateAndApplyPlan()}
           onCreateFixedEvent={planner.createFixedEvent}
           onDeleteFixedEvent={planner.deleteFixedEvent}
           onDeleteTaskSession={planner.deleteTaskSession}
           onScheduleTaskSession={planner.createTaskSession}
           referenceDate={referenceDate}
+          risks={planner.risks}
           selectedTaskId={selectedTaskId}
           taskSessions={planner.document.taskSessions}
           tasks={planner.document.tasks}
         />
         <TaskPanel
+          dependencies={planner.document.dependencies}
+          onCreateDependency={planner.createDependency}
           onCreateSubtask={planner.createSubtask}
           onCreateTask={planner.createTask}
+          onDeleteDependency={planner.deleteDependency}
           onExport={exportBackup}
           onImport={importBackup}
           onSelectTaskId={setSelectedTaskId}

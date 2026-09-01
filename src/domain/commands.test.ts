@@ -366,4 +366,171 @@ describe('executeCommand', () => {
       },
     })
   })
+
+  it('creates, validates, and deletes dependencies with cycle protection', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    if (!p1.ok) throw new Error()
+
+    const t1 = executeCommand(p1.value.document, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Task 1',
+    })
+    const t2 = executeCommand(t1.ok ? t1.value.document : empty, {
+      type: 'create-task',
+      id: 'task-2',
+      revisionId: 'rev-3',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Task 2',
+    })
+    if (!t2.ok) throw new Error()
+
+    // Cannot self-depend
+    const selfDep = executeCommand(t2.value.document, {
+      type: 'create-dependency',
+      id: 'dep-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      fromTaskId: 'task-1',
+      toTaskId: 'task-1',
+    })
+    expect(selfDep).toEqual({
+      ok: false,
+      error: { code: 'invalid-command', message: 'A task cannot depend on itself.' },
+    })
+
+    // Valid dependency: Task 2 depends on Task 1
+    const dep1 = executeCommand(t2.value.document, {
+      type: 'create-dependency',
+      id: 'dep-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      fromTaskId: 'task-1',
+      toTaskId: 'task-2',
+    })
+    expect(dep1).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          dependencies: [{ id: 'dep-1', fromTaskId: 'task-1', toTaskId: 'task-2' }],
+        },
+        revision: { number: 4, kind: 'dependency-created' },
+      },
+    })
+    if (!dep1.ok) throw new Error()
+
+    // Cycle: Task 1 depends on Task 2 (would create cycle Task 1 -> Task 2 -> Task 1)
+    const cycleDep = executeCommand(dep1.value.document, {
+      type: 'create-dependency',
+      id: 'dep-2',
+      revisionId: 'rev-5',
+      occurredAt: secondMoment,
+      fromTaskId: 'task-2',
+      toTaskId: 'task-1',
+    })
+    expect(cycleDep).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-command',
+        message: 'Adding this dependency would create a circular dependency.',
+      },
+    })
+
+    // Delete dependency
+    const delDep = executeCommand(dep1.value.document, {
+      type: 'delete-dependency',
+      id: 'dep-1',
+      revisionId: 'rev-5',
+      occurredAt: secondMoment,
+      dependencyId: 'dep-1',
+    })
+    expect(delDep).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          dependencies: [],
+        },
+        revision: { number: 5, kind: 'dependency-deleted' },
+      },
+    })
+  })
+
+  it('applies reference plans and performs exact undo', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    const t1 = executeCommand(p1.ok ? p1.value.document : empty, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Task 1',
+    })
+    if (!t1.ok) throw new Error()
+
+    const initialSessions = t1.value.document.taskSessions
+
+    // Apply plan
+    const plannedSessions = [
+      {
+        id: 'session-plan-1',
+        taskId: 'task-1',
+        startAt: '2026-09-01T09:00:00.000Z',
+        endAt: '2026-09-01T10:00:00.000Z',
+        createdAt: secondMoment,
+        updatedAt: secondMoment,
+      },
+    ]
+    const planApplied = executeCommand(t1.value.document, {
+      type: 'apply-plan',
+      id: 'plan-cmd-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      sessions: plannedSessions,
+    })
+    expect(planApplied).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          taskSessions: plannedSessions,
+        },
+        revision: { number: 3, kind: 'schedule-planned' },
+      },
+    })
+    if (!planApplied.ok) throw new Error()
+
+    // Exact undo
+    const undone = executeCommand(planApplied.value.document, {
+      type: 'undo-last-plan',
+      id: 'undo-cmd-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+    })
+    expect(undone).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          taskSessions: initialSessions,
+        },
+        revision: { number: 4, kind: 'plan-undone' },
+      },
+    })
+  })
 })

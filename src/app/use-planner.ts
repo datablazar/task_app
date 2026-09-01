@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createEmptyPlannerDocument } from '../domain/model'
 import { createStableId } from './ids'
+import { generateReferencePlan } from '../domain/planner-engine'
 import type { PlannerWorkspace } from '../application/planner-workspace'
-import type { PlannerDocument, Project } from '../domain/model'
+import type { PlanRisk, PlannerDocument, Project } from '../domain/model'
 
 export interface PlannerNotice {
   tone: 'success' | 'error'
@@ -39,6 +40,7 @@ export const usePlanner = ({
 
   const [document, setDocument] = useState<PlannerDocument>(initial.document)
   const [notice, setNotice] = useState<PlannerNotice>(initial.notice)
+  const [latestRisks, setLatestRisks] = useState<PlanRisk[]>([])
 
   const createProject = useCallback(
     (title: string): Project | undefined => {
@@ -189,7 +191,7 @@ export const usePlanner = ({
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Fixed event deleted.' })
+      setNotice({ tone: 'success', message: 'Fixed event removed.' })
       return true
     },
     [createId, document, now, workspace],
@@ -238,6 +240,108 @@ export const usePlanner = ({
     [createId, document, now, workspace],
   )
 
+  const createDependency = useCallback(
+    (fromTaskId: string, toTaskId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'create-dependency',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        fromTaskId,
+        toTaskId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Dependency added.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteDependency = useCallback(
+    (dependencyId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'delete-dependency',
+        id: dependencyId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        dependencyId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Dependency removed.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const generateAndApplyPlan = useCallback((): {
+    success: boolean
+    risks: PlanRisk[]
+    reasons: string[]
+  } => {
+    const plan = generateReferencePlan(document, { now: now().toISOString() })
+    if (!plan.success) {
+      setNotice({
+        tone: 'error',
+        message: plan.reasons[0] ?? 'Planning could not complete.',
+      })
+      setLatestRisks(plan.risks)
+      return { success: false, risks: plan.risks, reasons: plan.reasons }
+    }
+
+    const result = workspace.execute(document, {
+      type: 'apply-plan',
+      id: createId(),
+      revisionId: createId(),
+      occurredAt: now().toISOString(),
+      sessions: plan.sessions,
+    })
+
+    if (!result.ok) {
+      setNotice({ tone: 'error', message: result.error.message })
+      return { success: false, risks: plan.risks, reasons: plan.reasons }
+    }
+
+    setDocument(result.value.document)
+    setLatestRisks(plan.risks)
+    setNotice({
+      tone: 'success',
+      message: `Scheduled ${plan.sessions.length} session(s)${
+        plan.risks.length > 0 ? ` with ${plan.risks.length} risk(s)` : ''
+      }.`,
+    })
+    return { success: true, risks: plan.risks, reasons: plan.reasons }
+  }, [createId, document, now, workspace])
+
+  const undoLastPlan = useCallback((): boolean => {
+    const result = workspace.execute(document, {
+      type: 'undo-last-plan',
+      id: createId(),
+      revisionId: createId(),
+      occurredAt: now().toISOString(),
+    })
+    if (!result.ok) {
+      setNotice({ tone: 'error', message: result.error.message })
+      return false
+    }
+    setDocument(result.value.document)
+    setLatestRisks([])
+    setNotice({ tone: 'success', message: 'Reverted to previous schedule.' })
+    return true
+  }, [createId, document, now, workspace])
+
+  const canUndo = useMemo(
+    () => document.revisions.some((r) => r.kind === 'schedule-planned' && r.snapshot),
+    [document.revisions],
+  )
+
   const restore = useCallback(
     (raw: string): boolean => {
       const result = workspace.restore(raw)
@@ -246,6 +350,7 @@ export const usePlanner = ({
         return false
       }
       setDocument(result.value)
+      setLatestRisks([])
       setNotice({ tone: 'success', message: 'Backup restored locally.' })
       return true
     },
@@ -263,18 +368,24 @@ export const usePlanner = ({
   }, [document, workspace])
 
   return {
+    canUndo,
+    createDependency,
     createFixedEvent,
     createProject,
     createSubtask,
     createTask,
     createTaskSession,
+    deleteDependency,
     deleteFixedEvent,
     deleteTaskSession,
     document,
     exportBackup,
+    generateAndApplyPlan,
     notice,
     restore,
+    risks: latestRisks,
     setTaskCompletion,
+    undoLastPlan,
     updateTaskConstraints,
   }
 }
