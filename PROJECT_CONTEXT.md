@@ -16,7 +16,7 @@ Portable current spec+state for coding agents. Git owns code/history; ADRs own d
 
 1. Read all; inspect repo; continue from §12. Never restart/redesign/claim unverified work.
 2. Make the smallest coherent vertical change; preserve unrelated user work.
-3. Finish with proportionate tests, then update header, §11 status, §12 state, §13 hand-off, and §14 only for changed decisions. Commit state/ADR updates with the work they describe.
+3. Before an iteration starts/closes, or a material change occurs, review `docs/DEVELOPMENT_PLAN.md` using its governance section. Finish with proportionate tests, then update header, §11 status, §12 state, §13 hand-off, and §14 only for changed decisions. Commit state/plan/ADR updates with the work they describe.
 4. UK English. State assumptions/blockers. Never store secrets, chain-of-thought, chat, speculative claims, generated artefacts or verbose diaries here.
 5. Keep <8k tokens: integrate durable facts; max 3 hand-off lines; Git/ADRs hold detail. Run `node scripts/validate-project-context.mjs`.
 
@@ -180,13 +180,13 @@ Detailed execution plan: [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## 12 Current state
 
-Repo=`datablazar/task_app`; branch=`main`; initial remote base=`f9e8eb2`. Node 24.20.0 and npm 11.19.0 verified via NVM on Apple Silicon; repository-native context, ADR, CI and detailed development-plan documents exist; no app/package/tests. Active=`I0`; blocker=none. Next `I0-bootstrap`: initialise minimal React/Vite/TS/npm+tests; establish domain/storage boundaries; implement create-persist-export-import vertical slice; avoid unnecessary dependencies.
+Repo=`datablazar/task_app`; branch=`main`; initial remote base=`f9e8eb2`. Node 24.20.0 and npm 11.19.0 verified via NVM on Apple Silicon; repository-native context, ADR, CI and living development-plan documents exist; no app/package/tests. Active=`I0`; blocker=none. Next `I0-bootstrap`: initialise minimal React/Vite/TS/npm+tests; establish domain/storage boundaries; implement create-persist-export-import vertical slice; avoid unnecessary dependencies.
 
 ## 13 Hand-off (max 3; newest first)
 
+- 2026-09-01|Made the development plan reviewable and self-maintaining|plan,context,contribution rules,validator|I0-bootstrap
 - 2026-09-01|Added staged development plan to repository documentation|`docs/DEVELOPMENT_PLAN.md`|I0-bootstrap
 - 2026-09-01|Removed named integration references from the repository system|context,ADRs,validator|I0-bootstrap
-- 2026-08-31|Standardised local/CI runtime on Node 24.20.0+NVM+npm|`.nvmrc`,workflow,context|I0-bootstrap
 
 ## 14 Decisions
 

@@ -1,3 +1,11 @@
+---
+plan: development
+version: 1
+status: current
+last_reviewed: 2026-09-01
+next_review: before-I0-completion-or-material-change
+---
+
 # Development plan
 
 ## Purpose
@@ -11,6 +19,31 @@ Read the context file and linked ADRs before starting work. This plan does not o
 Create a local-first planner that helps one person capture work, automatically schedule it around real constraints, explain material changes and safely revise the plan when circumstances change.
 
 The first useful version must work without remote services or optional inference. Later capability must strengthen the deterministic core, never replace it.
+
+## Plan governance
+
+This is the current forward-looking plan, not a detailed history. `PROJECT_CONTEXT.md` records current state; ADRs record durable reasoning; Git records implementation history.
+
+### Review triggers
+
+Review this plan:
+
+- Before starting or closing an iteration.
+- At least once during each active iteration.
+- When user needs, scope, priority, risks, cost, privacy, architecture, dependencies or completion gates materially change.
+- When evidence shows the existing plan is failing, blocked or no longer the best route to the intended outcome.
+
+### Review process
+
+Answer these five questions briefly:
+
+1. Is the intended outcome still correct?
+2. Is the active iteration still the best next step?
+3. Does its completion gate still prove the right thing?
+4. What evidence, risk, blocker or user feedback changes the plan?
+5. Is the result `CURRENT`, `UPDATE`, `DEFER` or `BLOCKED`?
+
+If the result is `UPDATE`, revise the relevant future milestone and increment `version` only when scope, order or a completion gate changes. If it changes a durable architectural, privacy, cost or public-interface decision, add or supersede an ADR. Update `last_reviewed`, `next_review` and one compact entry in Review record for every review. Keep at most five entries; Git retains older detail.
 
 ## Delivery rules
 
@@ -211,3 +244,7 @@ Before completing any milestone:
 Start with **I0 — Foundation**. The immediate task is to initialise the minimal application and tests, then implement the create → persist → export → import vertical slice.
 
 Do not begin I1 until that slice is demonstrably correct.
+
+## Review record
+
+- 2026-09-01 | Initial plan review | CURRENT | I0 remains the correct next step; review before I0 completion or a material trigger.

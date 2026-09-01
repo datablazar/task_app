@@ -5,7 +5,7 @@ A local-first task and calendar application that automatically builds and repair
 ## Start here
 
 - [Canonical project context](PROJECT_CONTEXT.md): current goals, contracts, roadmap, status and next task.
-- [Development plan](docs/DEVELOPMENT_PLAN.md): staged build sequence and completion gates.
+- [Development plan](docs/DEVELOPMENT_PLAN.md): living build sequence, completion gates and review record.
 - [Decision records](docs/decisions/README.md): durable architectural reasoning.
 - [Repository protocol](AGENTS.md): instructions for any coding assistant.
 - [Contribution protocol](CONTRIBUTING.md): required implementation, documentation and verification workflow.

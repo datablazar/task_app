@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 
 const required = [
   'PROJECT_CONTEXT.md', 'AGENTS.md',
-  'CONTRIBUTING.md', 'docs/decisions/README.md',
+  'CONTRIBUTING.md', 'docs/DEVELOPMENT_PLAN.md', 'docs/decisions/README.md',
 ];
 const errors = [];
 for (const path of required) if (!existsSync(path)) errors.push(`Missing ${path}`);
@@ -35,6 +35,18 @@ if (!errors.length) {
   if (!instructions.includes('PROJECT_CONTEXT.md')) {
     errors.push('AGENTS.md does not point to canonical instructions');
   }
+
+  const plan = readFileSync('docs/DEVELOPMENT_PLAN.md', 'utf8');
+  for (const key of ['plan', 'version', 'status', 'last_reviewed', 'next_review']) {
+    if (!new RegExp(`^${key}:\\s*\\S+`, 'm').test(plan)) errors.push(`Missing development-plan header key: ${key}`);
+  }
+  for (const section of ['Purpose', 'Plan governance', 'Milestone sequence', 'Cross-milestone quality gates', 'Review record']) {
+    if (!plan.includes(section)) errors.push(`Missing development-plan section: ${section}`);
+  }
+  const reviews = plan.match(/## Review record[^\n]*\n([\s\S]*?)(?=\n## |$)/)?.[1] ?? '';
+  const reviewCount = reviews.split('\n').filter((line) => line.startsWith('- ')).length;
+  if (!reviewCount) errors.push('Development plan has no review record');
+  if (reviewCount > 5) errors.push(`Development-plan review record has ${reviewCount} entries; maximum is 5`);
 }
 
 const base = process.env.CONTEXT_BASE_SHA;
