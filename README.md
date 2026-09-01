@@ -6,7 +6,7 @@ A local-first task and calendar application that automatically builds and repair
 
 - [Canonical project context](PROJECT_CONTEXT.md): current goals, contracts, roadmap, status and next task.
 - [Decision records](docs/decisions/README.md): durable architectural reasoning.
-- Agent entry points: [repository protocol](AGENTS.md), [compatibility entry points](CLAUDE.md) and [GEMINI.md].
+- [Repository protocol](AGENTS.md): instructions for any coding assistant.
 - [Contribution protocol](CONTRIBUTING.md): required implementation, documentation and verification workflow.
 
 Current phase: **I0 — foundation**. No application code has been implemented yet.

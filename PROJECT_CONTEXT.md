@@ -36,7 +36,7 @@ Success: fast capture; rich/optional constraints; valid day/week plan; immediate
 | P4 | Optional inference returns validated typed proposals only: no scheduling, storage writes, hard-rule relaxation or external action. |
 | P5 | Autonomy is explainable, attributable, revisioned and exactly reversible. |
 | P6 | Same snapshot+policy version => same schedule. |
-| P7 | Offline/provider-failure operation is mandatory. |
+| P7 | Offline/inference-failure operation is mandatory. |
 | P8 | Modular monolith + usable vertical slices; abstract only real boundaries. |
 | P9 | £0 until value proven; cloud/accounts/integrations deferred. |
 | P10 | Quality requires invariants, human-reviewed golden plans, a11y and correction data. |
@@ -45,9 +45,9 @@ Success: fast capture; rich/optional constraints; valid day/week plan; immediate
 
 **MVP I0–I5:** project/task/subtask CRUD+completion+dependencies; availability/fixed/protected/preferred time; breaks/session limits; manual day/week calendar; deterministic auto-plan/replan; deadline risks; reason codes; revision/Undo; local persistence+versioned JSON backup; PWA; optional capability-selected inference for priority/duration/characteristics/clarification.
 
-**Later, gated:** intelligent inbox/NL; source-linked file dump; protected AI proxy; cloud sync; Google then Microsoft calendar; recurrence/reminders/briefings; energy/location/resources; native/mobile/team; user-approved external actions.
+**Later, gated:** intelligent inbox/NL; source-linked file dump; protected remote inference gateway; cloud sync; one external-calendar integration at a time; recurrence/reminders/briefings; energy/location/resources; native/mobile/team; user-approved external actions.
 
-**Defer:** general agent/chat-first UI, routine implementation-consensus voting, vector DB, microservices, Electron, Kubernetes, premium calendar components, simultaneous provider/calendar integrations, autonomous messaging/booking.
+**Defer:** general conversational UI, routine implementation-consensus voting, vector DB, microservices, Electron, Kubernetes, premium calendar components, simultaneous external-calendar integrations, autonomous messaging/booking.
 
 ## 3 Cost policy
 
@@ -72,13 +72,13 @@ React UI -> commands/queries -> domain -> pure scheduler
 ```
 
 ```text
-src/{app,features,domain,scheduler,intelligence,storage,shared}
+src/{app,features,domain,scheduler,inference,storage,shared}
 tests/{scenarios,integration,e2e}
 ```
 
 Rules: domain imports no React/storage/inference/calendar UI; scheduler is pure/no I/O; UI imports no DB/inference SDK; implementations depend on ports; validate all external input; no dumping-ground managers/helpers/utils.
 
-Extract `domain/scheduler/contracts` packages only when server/second app consumes them. Add serverless AI proxy only for deployed AI; cloud DB only for multi-device/remote backup/webhooks/sharing. Candidate (verify terms): Cloudflare Pages + narrow authenticated Worker + D1; all replaceable via ports.
+Extract `domain/scheduler/contracts` packages only when server/second app consumes them. Add a remote inference gateway only when deployed inference is needed; cloud DB only for multi-device/remote backup/webhooks/sharing. Candidate (verify terms): Cloudflare Pages + narrow authenticated Worker + D1; all replaceable via ports.
 
 Baseline: Node 24.20.0 LTS via NVM; npm; strict TypeScript; React+Vite; IndexedDB+migrations; FullCalendar Standard; Zod; Vitest+RTL+fast-check+Playwright; Temporal-compatible date layer (no scattered raw `Date` maths); accessible code-native UI; PWA after core stability. Versioned JSON import/export from I0; round-trip tested. Secrets only environment/server bindings, never client/Git.
 
@@ -103,7 +103,7 @@ type Source='user'|'calendar'|'learned'|'inference'|'system';
 type Sourced<T>={value:T;source:Source;confidence?:number;decisionId?:string;confirmedAt?:string};
 ```
 
-Commands: project create/update/archive; task create/update/complete/reopen; dependency add/remove; set availability; fixed-event CRUD; session lock/unlock/move; reschedule; apply-AI-proposal; undo-revision; import-backup. Every command MUST validate invariants, transact atomically, audit, declare replan need and return typed result/failure. Manual/AI/file/calendar inputs all use commands.
+Commands: project create/update/archive; task create/update/complete/reopen; dependency add/remove; set availability; fixed-event CRUD; session lock/unlock/move; reschedule; apply-inference-proposal; undo-revision; import-backup. Every command MUST validate invariants, transact atomically, audit, declare replan need and return typed result/failure. Manual/inference/file/calendar inputs all use commands.
 
 ## 6 Scheduler
 
@@ -123,27 +123,27 @@ Reasons: `DEADLINE_RISK,DEPENDENCY_READY,FIXED_CONFLICT,PREFERRED_WINDOW,SESSION
 
 Start with explainable greedy reference, retain as fallback/oracle. Consider beam/local/constraint optimisation only when golden cases prove need.
 
-## 7 Intelligence
+## 7 Inference
 
 Typed capabilities: I4=`inferPriority,estimateDuration,classifyTaskCharacteristics,needsClarification`; later=`suggestProject,detectDuplicates,proposeBreakdown,extractWorkCandidates,interpretScheduleInstruction,explainRevision`.
 
 Flow: rule/confirmed/cache -> qualified capability implementation -> schema+fact/conflict/invariant checks -> (high confidence, low risk, reversible) provisional apply+disclose; else ask user or approved escalation; invalid/outage/budget => deterministic default/clarification.
 
-Each capability selects its implementation through the same port; implementations MAY be deterministic heuristics, local or remote models, or user clarification. No implementation type is prescribed. Send minimum facts, not corpus. Facts/inferences remain separate; user can confirm/correct. Ask on low confidence, conflict, major displacement, wide duration uncertainty or sensitive/high-stakes issue. Log implementation/version/policy/schema/input hash, measured usage/cost, confidence, validation and disposition; redact sensitive data. Implementation failure never blocks CRUD/planning.
+Each capability selects its implementation through the same port; implementations MAY be deterministic heuristics, an external inference service, or user clarification. No implementation type is prescribed. Send minimum facts, not corpus. Facts/inferences remain separate; user can confirm/correct. Ask on low confidence, conflict, major displacement, wide duration uncertainty or sensitive/high-stakes issue. Log implementation/version/policy/schema/input hash, measured usage/cost, confidence, validation and disposition; redact sensitive data. Implementation failure never blocks CRUD/planning.
 
 Before changing an implementation, policy or schema, pass versioned labelled evaluation: schema validity, accuracy, unsupported claims, calibration, abstention/clarification, fact conflict, latency, cost and stability.
 
 ## 8 UX
 
-Nav: `Today|Calendar|Projects|Inbox|Settings` (Inbox disabled until ready). Today=next plan/risks/revision; Calendar=authoritative dominant day/week; Projects=hierarchy/dependencies; Inbox=capture/proposals; Settings=availability/policy/intelligence/privacy/usage/backup.
+Nav: `Today|Calendar|Projects|Inbox|Settings` (Inbox disabled until ready). Today=next plan/risks/revision; Calendar=authoritative dominant day/week; Projects=hierarchy/dependencies; Inbox=capture/proposals; Settings=availability/policy/inference/privacy/usage/backup.
 
-Quick task: title,project,duration,deadline,priority; progressive advanced: earliest start,windows,session limits/split,dependencies,break,mode. Calendar states differ beyond colour. Selection shows task+constraints+reasons+assumptions+lock/move consequences. Group auto-changes into inspectable Undoable revisions; avoid notification noise/chat panel. AI appears only as contextual suggestions/assumptions/clarifications.
+Quick task: title,project,duration,deadline,priority; progressive advanced: earliest start,windows,session limits/split,dependencies,break,mode. Calendar states differ beyond colour. Selection shows task+constraints+reasons+assumptions+lock/move consequences. Group auto-changes into inspectable Undoable revisions; avoid notification noise/conversational panel. Inference appears only as contextual suggestions/assumptions/clarifications.
 
 Design: calm trustworthy editorial command centre; dominant calendar; cool-neutral + one accent + semantic risks; open rails/lists/grid, few nested cards; deliberate type/spacing; desktop calendar, excellent narrow Today/capture. Full keyboard, focus, screen-reader labels, contrast, non-colour cues, reduced motion, responsive order.
 
 ## 9 Quality
 
-Every change: typecheck+relevant tests. UI: keyboard/a11y. Scheduler: properties+golden diff. Storage: migration+backup round-trip. Intelligence: failures+evaluation. Release: core Playwright flow.
+Every change: typecheck+relevant tests. UI: keyboard/a11y. Scheduler: properties+golden diff. Storage: migration+backup round-trip. Inference: failures+evaluation. Release: core Playwright flow.
 
 Properties: no overlaps/out-of-hours; fixed/locked unchanged; dependencies/session/break rules hold; allocation <= remaining; completed not future-scheduled; impossibility explicit; Undo restores logically identical state; equal input deterministic.
 
@@ -159,7 +159,7 @@ Release gate: zero known hard violations; deterministic; exact Undo; validated/p
 - Independent reviewer covers scheduler/domain/security, adversarial tests and difficult bugs.
 - Specialist agent handles isolated UI prototypes, library research or alternative algorithms.
 
-One issue/owner/branch; tests+evidence; different agent reviews; owner resolves; merge on gates. Parallelise disjoint modules only—never same domain type/migration/scheduler function/broad refactor. Prompts specify goal, scope, invariants, interfaces, acceptance and prohibitions. Resolve disagreement by law+test/benchmark, not model voting.
+One issue/owner/branch; tests+evidence; different agent reviews; owner resolves; merge on gates. Parallelise disjoint modules only—never same domain type/migration/scheduler function/broad refactor. Prompts specify goal, scope, invariants, interfaces, acceptance and prohibitions. Resolve disagreement by law+test/benchmark, not repeated consensus voting.
 
 ## 11 Roadmap
 
@@ -182,19 +182,18 @@ Repo=`datablazar/task_app`; branch=`main`; initial remote base=`f9e8eb2`. Node 2
 
 ## 13 Hand-off (max 3; newest first)
 
-- 2026-09-01|Made active development plan model agnostic; superseded provider-specific selection|context,ADR-0007|I0-bootstrap
+- 2026-09-01|Removed named integration references from the repository system|context,ADRs,validator|I0-bootstrap
 - 2026-08-31|Standardised local/CI runtime on Node 24.20.0+NVM+npm|`.nvmrc`,workflow,context|I0-bootstrap
 - 2026-08-31|Added self-enforcing Git/agent context protocol|agent files,CI validator,ADRs|I0-bootstrap
 
 ## 14 Decisions
 
-- [D01](docs/decisions/0001-deterministic-scheduler.md)|Accepted in part|Deterministic scheduler; inference-specific wording superseded by D07.
+- [D01](docs/decisions/0001-deterministic-scheduler-inference-boundary.md)|Accepted|Deterministic scheduler; bounded inference proposals.
 - [D02](docs/decisions/0002-local-first-storage.md)|Accepted|IndexedDB+versioned backup first.
 - [D03](docs/decisions/0003-modular-monolith.md)|Accepted|Modular monolith; extraction on trigger.
-- [D04](docs/decisions/0004-single-llm-provider.md)|Superseded|Provider-specific selection; replaced by D07.
+- [D04](docs/decisions/0004-capability-selected-inference.md)|Accepted|Select inference implementation by capability evidence.
 - [D05](docs/decisions/0005-standard-calendar-component.md)|Accepted|FullCalendar Standard; no premium MVP dependency.
 - [D06](docs/decisions/0006-defer-cloud-integrations.md)|Accepted|Cloud/auth/integrations follow core quality.
-- [D07](docs/decisions/0007-model-agnostic-intelligence.md)|Accepted|Select inference implementations by capability evidence, not model type/vendor.
 
 ## 15 Expansion/update rule
 

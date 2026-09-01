@@ -13,7 +13,7 @@ if (!errors.length) {
   for (const key of ['schema', 'updated', 'phase', 'state', 'next', 'lang', 'repo']) {
     if (!new RegExp(`^${key}:\\s*\\S+`, 'm').test(context)) errors.push(`Missing header key: ${key}`);
   }
-  for (const section of ['Goal + laws', 'Cost policy', 'Architecture', 'Scheduler', 'Intelligence', 'Quality', 'Roadmap', 'Current state', 'Hand-off', 'Decisions']) {
+  for (const section of ['Goal + laws', 'Cost policy', 'Architecture', 'Scheduler', 'Inference', 'Quality', 'Roadmap', 'Current state', 'Hand-off', 'Decisions']) {
     if (!context.includes(section)) errors.push(`Missing context section: ${section}`);
   }
 
@@ -31,11 +31,9 @@ if (!errors.length) {
     if (!index.includes(name)) errors.push(`ADR missing from index: ${name}`);
   }
 
-  for (const path of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.github/copilot-instructions.md']) {
-    if (existsSync(path)) {
-      const text = readFileSync(path, 'utf8');
-      if (!text.includes('AGENTS.md') && !text.includes('PROJECT_CONTEXT.md')) errors.push(`${path} does not point to canonical instructions`);
-    }
+  const instructions = readFileSync('AGENTS.md', 'utf8');
+  if (!instructions.includes('PROJECT_CONTEXT.md')) {
+    errors.push('AGENTS.md does not point to canonical instructions');
   }
 }
 

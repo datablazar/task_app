@@ -9,7 +9,7 @@ Authentication, cloud state, calendar synchronisation and file ingestion create 
 
 ## Decision
 
-Complete and validate the local manual planner, deterministic scheduler and bounded intelligence first. Add only the cloud capability that solves a demonstrated problem: protected AI proxy and/or sync, then Google Calendar, then Microsoft; file ingestion follows stable command/proposal pipelines.
+Complete and validate the local manual planner, deterministic scheduler and bounded inference first. Add only the cloud capability that solves a demonstrated problem: protected remote inference gateway and/or sync, then one external-calendar integration at a time; file ingestion follows stable command/proposal pipelines.
 
 ## Consequences
 
