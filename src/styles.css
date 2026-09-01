@@ -9,49 +9,49 @@
    -------------------------------------------------------------------------- */
 :root {
   /* Canvas & Atmospheric Backgrounds */
-  --canvas-bg: #f9f9f8;
-  --canvas-gradient: radial-gradient(circle at 10% 0%, rgba(238, 242, 255, 0.5) 0%, transparent 40%),
-                     radial-gradient(circle at 90% 100%, rgba(254, 243, 199, 0.4) 0%, transparent 40%),
-                     #f9f9f8;
+  --canvas-bg: #f7f4ee;
+  --canvas-gradient: radial-gradient(circle at 6% 4%, rgba(220, 91, 62, 0.10) 0%, transparent 42%),
+                     radial-gradient(circle at 94% 96%, rgba(126, 150, 131, 0.14) 0%, transparent 42%),
+                     #f7f4ee;
 
   /* Frosted Glass & Panel Materials */
-  --panel-bg: rgba(255, 255, 255, 0.84);
+  --panel-bg: rgba(255, 255, 255, 0.82);
   --panel-bg-solid: #ffffff;
   --panel-bg-hover: rgba(255, 255, 255, 0.95);
-  --panel-bg-subtle: rgba(245, 245, 244, 0.7);
-  --panel-bg-subtle-hover: rgba(231, 229, 228, 0.85);
+  --panel-bg-subtle: rgba(244, 241, 233, 0.7);
+  --panel-bg-subtle-hover: rgba(228, 222, 207, 0.85);
 
   /* Hairline Borders & Glass Specular Highlights */
-  --border-glass: rgba(228, 228, 231, 0.8);
-  --border-glass-strong: rgba(212, 212, 216, 0.95);
-  --border-glass-subtle: rgba(244, 244, 245, 0.7);
-  --border-focus: #4f46e5;
+  --border-glass: rgba(228, 222, 207, 0.85);
+  --border-glass-strong: rgba(216, 208, 190, 0.95);
+  --border-glass-subtle: rgba(236, 231, 217, 0.75);
+  --border-focus: #16283f;
   --specular-glow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 
   /* Editorial & System Typography */
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-muted: #a1a1aa;
+  --text-primary: #1b2233;
+  --text-secondary: #6b6558;
+  --text-muted: #9a9484;
   --text-inverse: #ffffff;
 
-  /* Primary Brand (Nordic Indigo & Cobalt) */
-  --brand-primary: #4338ca;
-  --brand-primary-hover: #3730a3;
-  --brand-accent: #6366f1;
-  --brand-light: #eef2ff;
-  --brand-border: #c7d2fe;
-  --brand-glow: rgba(99, 102, 241, 0.18);
+  /* Primary Brand (Editorial Navy & Coral) */
+  --brand-primary: #16283f;
+  --brand-primary-hover: #0f1d30;
+  --brand-accent: #dc5b3e;
+  --brand-light: #f3efe6;
+  --brand-border: #e4decf;
+  --brand-glow: rgba(22, 40, 63, 0.16);
 
   /* Editorial Category Palettes */
-  /* Terracotta / Sienna (Deadlines & Urgency) */
-  --terracotta-primary: #c2410c;
-  --terracotta-light: #fff7ed;
-  --terracotta-border: #fed7aa;
+  /* Coral / Terracotta (Deadlines & Urgency) */
+  --terracotta-primary: #8a3a25;
+  --terracotta-light: #fbe6dd;
+  --terracotta-border: #f0c6b4;
 
-  /* Sage / Forest (Completions & Steady Focus) */
-  --sage-primary: #15803d;
-  --sage-light: #f0fdf4;
-  --sage-border: #bbf7d0;
+  /* Sage (Completions & Steady Focus) */
+  --sage-primary: #5c7a63;
+  --sage-light: #e7ece3;
+  --sage-border: #cfe0d2;
 
   /* Amethyst / Violet (AI Intelligence & Proposals) */
   --amethyst-primary: #7e22ce;
@@ -65,10 +65,10 @@
   --amber-border: #fde68a;
 
   /* macOS Spatial Shadows */
-  --shadow-dock: 0 4px 20px -2px rgba(24, 24, 27, 0.04), 0 1px 2px rgba(24, 24, 27, 0.02);
-  --shadow-panel: 0 8px 30px -4px rgba(24, 24, 27, 0.04), 0 2px 6px -1px rgba(24, 24, 27, 0.02);
-  --shadow-floating: 0 20px 35px -8px rgba(24, 24, 27, 0.08), 0 4px 12px -2px rgba(24, 24, 27, 0.03);
-  --shadow-modal: 0 25px 50px -12px rgba(24, 24, 27, 0.18), 0 0 0 1px rgba(24, 24, 27, 0.06);
+  --shadow-dock: 0 4px 20px -2px rgba(22, 30, 45, 0.05), 0 1px 2px rgba(22, 30, 45, 0.03);
+  --shadow-panel: 0 8px 30px -4px rgba(22, 30, 45, 0.06), 0 2px 6px -1px rgba(22, 30, 45, 0.03);
+  --shadow-floating: 0 20px 35px -8px rgba(22, 30, 45, 0.10), 0 4px 12px -2px rgba(22, 30, 45, 0.04);
+  --shadow-modal: 0 25px 50px -12px rgba(22, 30, 45, 0.20), 0 0 0 1px rgba(22, 30, 45, 0.06);
 
   /* Geometry & Radii */
   --radius-xs: 6px;
@@ -80,6 +80,7 @@
 
   /* Typography Stacks */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Geist", "Inter", -apple-system, sans-serif;
+  --font-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 
   /* Fluid Motion Transitions */
@@ -92,40 +93,40 @@
    2. Dark Mode Overrides (Obsidian Smoked Glass)
    -------------------------------------------------------------------------- */
 [data-theme="dark"] {
-  --canvas-bg: #090d16;
-  --canvas-gradient: radial-gradient(circle at 10% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 45%),
-                     radial-gradient(circle at 90% 100%, rgba(168, 85, 247, 0.1) 0%, transparent 45%),
-                     #090d16;
+  --canvas-bg: #0a1526;
+  --canvas-gradient: radial-gradient(circle at 8% 4%, rgba(255, 122, 84, 0.14) 0%, transparent 45%),
+                     radial-gradient(circle at 92% 96%, rgba(159, 191, 160, 0.10) 0%, transparent 45%),
+                     #0a1526;
 
-  --panel-bg: rgba(18, 24, 38, 0.82);
-  --panel-bg-solid: #111726;
-  --panel-bg-hover: rgba(26, 34, 52, 0.9);
-  --panel-bg-subtle: rgba(24, 32, 48, 0.6);
-  --panel-bg-subtle-hover: rgba(33, 44, 66, 0.8);
+  --panel-bg: rgba(18, 28, 46, 0.82);
+  --panel-bg-solid: #111c2e;
+  --panel-bg-hover: rgba(28, 40, 62, 0.9);
+  --panel-bg-subtle: rgba(24, 35, 54, 0.6);
+  --panel-bg-subtle-hover: rgba(35, 48, 72, 0.8);
 
   --border-glass: rgba(255, 255, 255, 0.09);
   --border-glass-strong: rgba(255, 255, 255, 0.15);
   --border-glass-subtle: rgba(255, 255, 255, 0.05);
-  --border-focus: #818cf8;
+  --border-focus: #ff9c7d;
   --specular-glow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-inverse: #0f172a;
+  --text-primary: #f3f1ea;
+  --text-secondary: #9ba3b8;
+  --text-muted: #6e7690;
+  --text-inverse: #0a1526;
 
-  --brand-primary: #6366f1;
-  --brand-primary-hover: #4f46e5;
-  --brand-light: rgba(99, 102, 241, 0.15);
-  --brand-border: rgba(99, 102, 241, 0.35);
+  --brand-primary: #ff7a54;
+  --brand-primary-hover: #f2653d;
+  --brand-light: rgba(255, 122, 84, 0.14);
+  --brand-border: rgba(255, 122, 84, 0.35);
 
-  --terracotta-primary: #fb923c;
-  --terracotta-light: rgba(251, 146, 60, 0.12);
-  --terracotta-border: rgba(251, 146, 60, 0.3);
+  --terracotta-primary: #ffb59c;
+  --terracotta-light: rgba(255, 122, 84, 0.14);
+  --terracotta-border: rgba(255, 122, 84, 0.35);
 
-  --sage-primary: #4ade80;
-  --sage-light: rgba(74, 222, 128, 0.12);
-  --sage-border: rgba(74, 222, 128, 0.3);
+  --sage-primary: #9fbfa0;
+  --sage-light: rgba(159, 191, 160, 0.14);
+  --sage-border: rgba(159, 191, 160, 0.3);
 
   --amethyst-primary: #c084fc;
   --amethyst-light: rgba(192, 132, 252, 0.12);
@@ -187,26 +188,28 @@ textarea {
    4. App Shell & Spatial Layout
    -------------------------------------------------------------------------- */
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* Header macOS HUD Dock */
+/* Header: floating glass toolbar */
 .app-header {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 24px;
+  margin: 16px 16px 0 16px;
+  padding: 10px 20px;
   background: var(--panel-bg);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-bottom: 1px solid var(--border-glass);
-  box-shadow: var(--shadow-dock);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel), var(--specular-glow);
   transition: var(--transition-smooth);
 }
 
@@ -228,12 +231,9 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
-  color: #ffffff;
-  box-shadow: 0 2px 8px var(--brand-glow), var(--specular-glow);
+  width: 26px;
+  height: 26px;
+  color: var(--brand-primary);
 }
 
 .brand-text {
@@ -357,8 +357,8 @@ textarea {
 }
 
 .button--primary {
-  background: linear-gradient(180deg, var(--brand-accent) 0%, var(--brand-primary) 100%);
-  color: #ffffff;
+  background: var(--brand-primary);
+  color: var(--text-inverse);
   border-color: var(--brand-primary);
   box-shadow: 0 2px 6px var(--brand-glow), var(--specular-glow);
 }
@@ -424,20 +424,19 @@ textarea {
    6. Universal Quick-Capture Bar (⌘K Spotlight)
    -------------------------------------------------------------------------- */
 .quick-capture-container {
-  max-width: 1440px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 560px;
   margin: 0 auto;
-  padding: 14px 24px 0 24px;
+  padding: 0;
 }
 
 .quick-capture-form {
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--border-glass-strong);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  box-shadow: var(--shadow-panel), var(--specular-glow);
+  position: relative;
+  background: var(--panel-bg-subtle);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-pill);
+  padding: 6px 8px 6px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -463,9 +462,10 @@ textarea {
 
 .quick-capture-input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
-  font-size: 0.95rem;
+  font-size: 0.84rem;
   font-weight: 500;
   color: var(--text-primary);
   outline: none;
@@ -494,12 +494,21 @@ textarea {
 }
 
 .quick-capture-pills {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border-glass-subtle);
+  padding: 10px 14px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-floating);
 }
 
 .quick-capture-pills__label {
@@ -538,18 +547,134 @@ textarea {
 }
 
 /* --------------------------------------------------------------------------
-   7. 3-Column Spatial Grid Shell
+   7. Full-Bleed Calendar Shell with Pop-Out Panels
    -------------------------------------------------------------------------- */
 .planner-shell {
+  position: relative;
   flex: 1;
-  max-width: 1440px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 18px 24px 24px 24px;
-  display: grid;
-  grid-template-columns: 240px minmax(450px, 1fr) 340px;
-  gap: 18px;
-  align-items: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Floating icon rail: opens/closes the Projects & Tasks pop-out panels */
+.app-rail {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  bottom: 16px;
+  z-index: 5;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  background: var(--panel-bg);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel), var(--specular-glow);
+}
+
+.app-rail__btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.app-rail__btn:hover {
+  background: var(--panel-bg-subtle);
+  color: var(--text-primary);
+}
+
+.app-rail__btn.is-active {
+  background: var(--brand-primary);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-dock);
+}
+
+@media (min-width: 901px) {
+  .planner-shell {
+    padding-left: 88px;
+  }
+
+  .calendar-panel {
+    height: 100%;
+  }
+
+  .project-panel {
+    position: absolute;
+    left: 88px;
+    top: 16px;
+    bottom: 16px;
+    width: 300px;
+    z-index: 6;
+    overflow-y: auto;
+  }
+
+  .task-panel {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    bottom: 16px;
+    width: 400px;
+    z-index: 6;
+    overflow-y: auto;
+  }
+
+  /* The panels float above the calendar visually, but the calendar's own
+     header actions (Auto-Plan Week, policy select, week nav) must stay
+     reachable rather than sitting underneath a panel's footprint, so the
+     calendar reflows to stay clear of whichever panel is open. */
+  .planner-shell.has-projects-open {
+    padding-left: 404px; /* 88 (rail) + 300 (panel) + 16 (gap) */
+  }
+
+  .planner-shell.has-tasks-open {
+    padding-right: 416px; /* 400 (panel) + 16 (gap) */
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  .project-panel {
+    width: 260px;
+  }
+
+  .task-panel {
+    width: 340px;
+  }
+
+  .planner-shell.has-projects-open {
+    padding-left: 364px; /* 88 (rail) + 260 (panel) + 16 (gap) */
+  }
+
+  .planner-shell.has-tasks-open {
+    padding-right: 356px; /* 340 (panel) + 16 (gap) */
+  }
+}
+
+@media (min-width: 901px) and (prefers-reduced-motion: no-preference) {
+  .project-panel {
+    animation: panelPopLeft 160ms var(--ease-spring);
+  }
+
+  .task-panel {
+    animation: panelPopRight 160ms var(--ease-spring);
+  }
+
+  .planner-shell {
+    transition: padding 200ms var(--ease-spring);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -566,6 +691,14 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Both panels stay mounted so a closed draft isn't lost; an author `display`
+   rule would otherwise beat the user-agent [hidden] default, so it needs
+   restating here explicitly. */
+.project-panel[hidden],
+.task-panel[hidden] {
+  display: none;
 }
 
 .project-panel__header {
@@ -645,7 +778,7 @@ textarea {
 
 .project-item.is-active .project-item__count {
   background: var(--brand-primary);
-  color: #ffffff;
+  color: var(--text-inverse);
 }
 
 .project-form {
@@ -674,16 +807,11 @@ textarea {
    9. Center Column: Spatial Calendar Canvas
    -------------------------------------------------------------------------- */
 .calendar-panel {
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  box-shadow: var(--shadow-panel), var(--specular-glow);
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  padding: 16px 20px 20px 20px;
 }
 
 .calendar-panel__header {
@@ -703,9 +831,10 @@ textarea {
 }
 
 .calendar-panel__header h1 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--text-primary);
 }
 
@@ -804,8 +933,12 @@ textarea {
 .calendar-grid {
   display: grid;
   grid-template-columns: 50px repeat(7, 1fr);
+  align-content: start;
   gap: 4px;
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
+  overflow-y: auto;
 }
 
 .calendar-grid--today {
@@ -813,10 +946,17 @@ textarea {
 }
 
 .calendar-grid__corner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   height: 32px;
+  background: var(--canvas-bg);
 }
 
 .calendar-grid__day-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -846,7 +986,7 @@ textarea {
 }
 
 .calendar-grid__day-header.is-today .day-number {
-  color: var(--brand-primary);
+  color: var(--brand-accent);
 }
 
 .calendar-grid__row {
@@ -1015,6 +1155,14 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+#selected-project-heading {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-primary);
 }
 
 .tasks-section__header {
@@ -1481,18 +1629,78 @@ textarea {
   }
 }
 
-@media (max-width: 1140px) {
-  .planner-shell {
-    grid-template-columns: 220px 1fr 300px;
-    gap: 14px;
-    padding: 14px;
+@keyframes panelPopLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
+@keyframes panelPopRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Below 901px the pop-out panels fall back to the classic stacked layout:
+   the icon rail is hidden and both panels are always present in normal flow. */
 @media (max-width: 900px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .app-header {
+    flex-wrap: wrap;
+  }
+
+  .quick-capture-container {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .app-rail {
+    display: none;
+  }
+
   .planner-shell {
+    display: grid;
     grid-template-columns: 1fr;
     gap: 16px;
+    padding: 16px;
+    overflow: visible;
+  }
+
+  .project-panel,
+  .task-panel,
+  .calendar-panel {
+    position: static;
+    width: auto;
+    height: auto;
+  }
+
+  .calendar-grid {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .calendar-panel__header-info {
+    flex-wrap: wrap;
+  }
+
+  .calendar-panel__header h1 {
+    font-size: 1.15rem;
   }
 
   .desktop-backup-actions {

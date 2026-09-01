@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PlannerWorkspace } from '../application/planner-workspace'
 import { LocalPlannerRepository } from '../infrastructure/local-planner-repository'
 import { BackupControls } from './components/backup-controls'
@@ -19,6 +19,43 @@ interface PlannerAppProps {
   storage?: StorageLike
 }
 
+/**
+ * Above this width the Projects/Tasks panels are pop-out overlays that
+ * default to closed; below it (and wherever matchMedia is unavailable,
+ * e.g. tests) they behave as always-present panels in a stacked layout.
+ */
+const DESKTOP_BREAKPOINT = '(min-width: 901px)'
+
+const useIsDesktop = (): boolean => {
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return true
+    }
+    try {
+      return window.matchMedia(DESKTOP_BREAKPOINT).matches
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return
+    }
+    let query: MediaQueryList
+    try {
+      query = window.matchMedia(DESKTOP_BREAKPOINT)
+    } catch {
+      return
+    }
+    const handleChange = () => setIsDesktop(query.matches)
+    query.addEventListener('change', handleChange)
+    return () => query.removeEventListener('change', handleChange)
+  }, [])
+
+  return isDesktop
+}
+
 export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const repository = useMemo(
     () => new LocalPlannerRepository(storage ?? window.localStorage),
@@ -31,6 +68,45 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   )
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [referenceDate] = useState(() => now?.() ?? new Date())
+
+  const isDesktop = useIsDesktop()
+  const [isProjectsOpen, setIsProjectsOpen] = useState(false)
+  const [isTasksOpen, setIsTasksOpen] = useState(false)
+  const showProjectsPanel = isProjectsOpen || !isDesktop
+  const showTasksPanel = isTasksOpen || !isDesktop
+
+  // Both panels stay mounted (and keep their draft state) at all times.
+  // Autofocus-on-open must react to an actual desktop open EVENT, not to
+  // `isDesktop && isOpen` as a derived value: that combination also flips
+  // true on an unrelated resize (e.g. a mobile selection already left
+  // isOpen=true, then the window is widened past the breakpoint), which
+  // would steal focus with no open action at all. These counters only
+  // increment at the point of a real desktop-open action, so a resize on
+  // its own never changes them.
+  const [projectsFocusToken, setProjectsFocusToken] = useState(0)
+  const [tasksFocusToken, setTasksFocusToken] = useState(0)
+
+  const toggleProjectsPanel = () => {
+    setIsProjectsOpen((open) => {
+      const next = !open
+      if (next) setProjectsFocusToken((token) => token + 1)
+      return next
+    })
+  }
+
+  const toggleTasksPanel = () => {
+    setIsTasksOpen((open) => {
+      const next = !open
+      if (next) setTasksFocusToken((token) => token + 1)
+      return next
+    })
+  }
+
+  const selectProject = (projectId: string) => {
+    setSelectedProjectId(projectId)
+    setIsTasksOpen(true)
+    if (isDesktop) setTasksFocusToken((token) => token + 1)
+  }
 
   // Theme State: 'light' (Editorial Alabaster) vs 'dark' (Obsidian Smoked Glass)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -72,6 +148,8 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
       return false
     }
     setSelectedProjectId(project.id)
+    setIsTasksOpen(true)
+    if (isDesktop) setTasksFocusToken((token) => token + 1)
     return true
   }
 
@@ -123,10 +201,10 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         <div className="app-header__identity">
           <div className="brand-lockup">
             <span className="brand-logo" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="3" y="4" width="18" height="17" rx="3.5" stroke="currentColor" strokeWidth="2" />
-                <path d="M16 2V6M8 2V6M3 9.5H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <circle cx="12" cy="14" r="1.75" fill="currentColor" />
+              <svg width="24" height="24" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 8C2 8 8 2 13 8C18 14 24 18 24 18" stroke="var(--brand-primary)" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M2 18C2 18 8 24 13 18C18 12 24 8 24 8" stroke="var(--sage-primary)" strokeWidth="2.2" strokeLinecap="round" />
+                <circle cx="13" cy="13" r="2" fill="var(--brand-accent)" />
               </svg>
             </span>
             <div className="brand-text">
@@ -163,6 +241,12 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           </button>
         </div>
 
+        <QuickCaptureBar
+          onCreateQuickTask={planner.createQuickTask}
+          projects={planner.document.projects}
+          selectedProjectId={activeSelectedProjectId}
+        />
+
         <div className="backup-actions">
           <button
             aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
@@ -177,20 +261,72 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         </div>
       </header>
 
-      <QuickCaptureBar
-        onCreateQuickTask={planner.createQuickTask}
-        projects={planner.document.projects}
-        selectedProjectId={activeSelectedProjectId}
-      />
+      <main
+        className={[
+          'planner-shell',
+          isDesktop && isProjectsOpen ? 'has-projects-open' : '',
+          isDesktop && isTasksOpen ? 'has-tasks-open' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <nav aria-label="Panel navigation" className="app-rail">
+          <button
+            aria-label="Toggle Projects panel"
+            aria-pressed={isProjectsOpen}
+            className={`app-rail__btn${isProjectsOpen ? ' is-active' : ''}`}
+            onClick={toggleProjectsPanel}
+            title="Projects"
+            type="button"
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.7"
+              />
+            </svg>
+          </button>
+          <button
+            aria-label="Toggle Tasks panel"
+            aria-pressed={isTasksOpen}
+            className={`app-rail__btn${isTasksOpen ? ' is-active' : ''}`}
+            onClick={toggleTasksPanel}
+            title="Tasks"
+            type="button"
+          >
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 12h4l2 3h4l2-3h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+              <path
+                d="M4 12V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v6"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.7"
+              />
+              <path
+                d="M4 12v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.7"
+              />
+            </svg>
+          </button>
+        </nav>
 
-      <main className="planner-shell">
         <ProjectPanel
+          focusToken={projectsFocusToken}
+          hidden={!showProjectsPanel}
           onCreateProject={createProject}
-          onSelectProject={setSelectedProjectId}
+          onSelectProject={selectProject}
           projects={planner.document.projects}
           selectedProjectId={activeSelectedProjectId}
           taskCountByProject={taskCountByProject}
         />
+
         <CalendarPreview
           fixedEvents={planner.document.fixedEvents}
           hasOverdueSessions={planner.hasOverdueSessions}
@@ -211,8 +347,11 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           taskSessions={planner.document.taskSessions}
           tasks={planner.document.tasks}
         />
+
         <TaskPanel
+          focusToken={tasksFocusToken}
           dependencies={planner.document.dependencies}
+          hidden={!showTasksPanel}
           onCreateDependency={planner.createDependency}
           onCreateSubtask={planner.createSubtask}
           onCreateTask={planner.createTask}

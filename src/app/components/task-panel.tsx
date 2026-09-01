@@ -1,9 +1,11 @@
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BackupControls } from './backup-controls'
 import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
 
 interface TaskPanelProps {
+  focusToken: number
+  hidden: boolean
   onCreateTask: (projectId: string, title: string) => boolean
   onCreateSubtask?: (projectId: string, parentTaskId: string, title: string) => boolean
   onUpdateTaskConstraints?: (
@@ -25,6 +27,8 @@ interface TaskPanelProps {
 }
 
 export const TaskPanel = ({
+  focusToken,
+  hidden,
   onCreateTask,
   onCreateSubtask,
   onUpdateTaskConstraints,
@@ -44,6 +48,18 @@ export const TaskPanel = ({
   const [title, setTitle] = useState('')
   const [activeSubtaskParentId, setActiveSubtaskParentId] = useState<string | null>(null)
   const [subtaskTitle, setSubtaskTitle] = useState('')
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // The panel stays mounted at all times (so a closed draft isn't lost).
+  // `focusToken` only increments at the moment of a real desktop-open
+  // action (see planner-app.tsx), so it never fires from a resize or from
+  // the always-on mobile layout the way a derived `isDesktop && isOpen`
+  // boolean would.
+  useEffect(() => {
+    if (focusToken > 0) {
+      headingRef.current?.focus()
+    }
+  }, [focusToken])
 
   // Constraint editing state
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
@@ -316,10 +332,12 @@ export const TaskPanel = ({
   }, [dependencies, editingTask, tasks])
 
   return (
-    <aside className="task-panel" aria-labelledby="selected-project-heading">
+    <aside aria-labelledby="selected-project-heading" className="task-panel" hidden={hidden}>
       {project ? (
         <>
-          <h2 id="selected-project-heading">{project.title}</h2>
+          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
+            {project.title}
+          </h2>
           <section aria-labelledby="tasks-heading" className="tasks-section">
             <div className="tasks-section__header">
               <h3 id="tasks-heading">Tasks</h3>
@@ -404,7 +422,9 @@ export const TaskPanel = ({
         </>
       ) : (
         <div className="no-project-selected">
-          <h2 id="selected-project-heading">Start with a project</h2>
+          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
+            Start with a project
+          </h2>
           <p>Create a project, then add its first task here.</p>
         </div>
       )}

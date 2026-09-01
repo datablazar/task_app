@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import type { Project } from '../../domain/model'
 
 interface ProjectPanelProps {
+  focusToken: number
+  hidden: boolean
   onCreateProject: (title: string) => boolean
   onSelectProject: (projectId: string) => void
   projects: Project[]
@@ -11,6 +13,8 @@ interface ProjectPanelProps {
 }
 
 export const ProjectPanel = ({
+  focusToken,
+  hidden,
   onCreateProject,
   onSelectProject,
   projects,
@@ -20,12 +24,24 @@ export const ProjectPanel = ({
   const [isCreating, setIsCreating] = useState(false)
   const [title, setTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     if (isCreating) {
       inputRef.current?.focus()
     }
   }, [isCreating])
+
+  // The panel stays mounted at all times (so a closed draft isn't lost).
+  // `focusToken` only increments at the moment of a real desktop-open
+  // action (see planner-app.tsx), so it never fires from a resize or from
+  // the always-on mobile layout the way a derived `isDesktop && isOpen`
+  // boolean would.
+  useEffect(() => {
+    if (focusToken > 0) {
+      headingRef.current?.focus()
+    }
+  }, [focusToken])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -36,9 +52,11 @@ export const ProjectPanel = ({
   }
 
   return (
-    <aside className="project-panel" aria-labelledby="projects-heading">
+    <aside aria-labelledby="projects-heading" className="project-panel" hidden={hidden}>
       <div className="project-panel__header">
-        <h2 id="projects-heading">Projects</h2>
+        <h2 id="projects-heading" ref={headingRef} tabIndex={-1}>
+          Projects
+        </h2>
         <span className="project-panel__badge">{projects.length}</span>
       </div>
       <nav aria-label="Your projects">
