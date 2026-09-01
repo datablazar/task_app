@@ -74,6 +74,11 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const [isTasksOpen, setIsTasksOpen] = useState(false)
   const showProjectsPanel = isProjectsOpen || !isDesktop
   const showTasksPanel = isTasksOpen || !isDesktop
+  // Both panels stay mounted (and keep their draft state) at all times;
+  // only a desktop pop-out toggle should steal keyboard focus on open,
+  // never the always-on mobile layout or a window resize.
+  const projectsJustPoppedOut = isDesktop && isProjectsOpen
+  const tasksJustPoppedOut = isDesktop && isTasksOpen
 
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId)
@@ -280,15 +285,15 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           </button>
         </nav>
 
-        {showProjectsPanel ? (
-          <ProjectPanel
-            onCreateProject={createProject}
-            onSelectProject={selectProject}
-            projects={planner.document.projects}
-            selectedProjectId={activeSelectedProjectId}
-            taskCountByProject={taskCountByProject}
-          />
-        ) : null}
+        <ProjectPanel
+          autoFocusOnOpen={projectsJustPoppedOut}
+          hidden={!showProjectsPanel}
+          onCreateProject={createProject}
+          onSelectProject={selectProject}
+          projects={planner.document.projects}
+          selectedProjectId={activeSelectedProjectId}
+          taskCountByProject={taskCountByProject}
+        />
 
         <CalendarPreview
           fixedEvents={planner.document.fixedEvents}
@@ -311,25 +316,25 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           tasks={planner.document.tasks}
         />
 
-        {showTasksPanel ? (
-          <TaskPanel
-            dependencies={planner.document.dependencies}
-            onCreateDependency={planner.createDependency}
-            onCreateSubtask={planner.createSubtask}
-            onCreateTask={planner.createTask}
-            onDeleteDependency={planner.deleteDependency}
-            onExport={exportBackup}
-            onImport={importBackup}
-            onSelectTaskId={setSelectedTaskId}
-            onSetTaskCompletion={planner.setTaskCompletion}
-            onTriggerAi={handleTriggerAi}
-            onUpdateTaskConstraints={planner.updateTaskConstraints}
-            project={selectedProject}
-            selectedTaskId={selectedTaskId}
-            taskSessions={planner.document.taskSessions}
-            tasks={selectedTasks}
-          />
-        ) : null}
+        <TaskPanel
+          autoFocusOnOpen={tasksJustPoppedOut}
+          dependencies={planner.document.dependencies}
+          hidden={!showTasksPanel}
+          onCreateDependency={planner.createDependency}
+          onCreateSubtask={planner.createSubtask}
+          onCreateTask={planner.createTask}
+          onDeleteDependency={planner.deleteDependency}
+          onExport={exportBackup}
+          onImport={importBackup}
+          onSelectTaskId={setSelectedTaskId}
+          onSetTaskCompletion={planner.setTaskCompletion}
+          onTriggerAi={handleTriggerAi}
+          onUpdateTaskConstraints={planner.updateTaskConstraints}
+          project={selectedProject}
+          selectedTaskId={selectedTaskId}
+          taskSessions={planner.document.taskSessions}
+          tasks={selectedTasks}
+        />
       </main>
 
       {/* AI Proposal Modal */}

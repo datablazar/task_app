@@ -669,6 +669,14 @@ textarea {
   gap: 16px;
 }
 
+/* Both panels stay mounted so a closed draft isn't lost; an author `display`
+   rule would otherwise beat the user-agent [hidden] default, so it needs
+   restating here explicitly. */
+.project-panel[hidden],
+.task-panel[hidden] {
+  display: none;
+}
+
 .project-panel__header {
   display: flex;
   align-items: center;

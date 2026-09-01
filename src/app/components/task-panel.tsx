@@ -4,6 +4,8 @@ import { BackupControls } from './backup-controls'
 import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
 
 interface TaskPanelProps {
+  autoFocusOnOpen: boolean
+  hidden: boolean
   onCreateTask: (projectId: string, title: string) => boolean
   onCreateSubtask?: (projectId: string, parentTaskId: string, title: string) => boolean
   onUpdateTaskConstraints?: (
@@ -25,6 +27,8 @@ interface TaskPanelProps {
 }
 
 export const TaskPanel = ({
+  autoFocusOnOpen,
+  hidden,
   onCreateTask,
   onCreateSubtask,
   onUpdateTaskConstraints,
@@ -46,12 +50,14 @@ export const TaskPanel = ({
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const headingRef = useRef<HTMLHeadingElement>(null)
 
-  // This panel mounts fresh each time it pops open, so focusing on mount
-  // moves keyboard focus straight into it instead of leaving it on the
-  // rail toggle button that opened it.
+  // The panel stays mounted at all times (so a closed draft isn't lost);
+  // only an actual desktop pop-out-open should steal keyboard focus, never
+  // the always-on mobile layout or a window resize crossing the breakpoint.
   useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
+    if (autoFocusOnOpen) {
+      headingRef.current?.focus()
+    }
+  }, [autoFocusOnOpen])
 
   // Constraint editing state
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
@@ -324,7 +330,7 @@ export const TaskPanel = ({
   }, [dependencies, editingTask, tasks])
 
   return (
-    <aside className="task-panel" aria-labelledby="selected-project-heading">
+    <aside aria-labelledby="selected-project-heading" className="task-panel" hidden={hidden}>
       {project ? (
         <>
           <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>

@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import type { Project } from '../../domain/model'
 
 interface ProjectPanelProps {
+  autoFocusOnOpen: boolean
+  hidden: boolean
   onCreateProject: (title: string) => boolean
   onSelectProject: (projectId: string) => void
   projects: Project[]
@@ -11,6 +13,8 @@ interface ProjectPanelProps {
 }
 
 export const ProjectPanel = ({
+  autoFocusOnOpen,
+  hidden,
   onCreateProject,
   onSelectProject,
   projects,
@@ -28,12 +32,14 @@ export const ProjectPanel = ({
     }
   }, [isCreating])
 
-  // This panel mounts fresh each time it pops open, so focusing on mount
-  // moves keyboard focus straight into it instead of leaving it on the
-  // rail toggle button that opened it.
+  // The panel stays mounted at all times (so a closed draft isn't lost);
+  // only an actual desktop pop-out-open should steal keyboard focus, never
+  // the always-on mobile layout or a window resize crossing the breakpoint.
   useEffect(() => {
-    headingRef.current?.focus()
-  }, [])
+    if (autoFocusOnOpen) {
+      headingRef.current?.focus()
+    }
+  }, [autoFocusOnOpen])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -44,7 +50,7 @@ export const ProjectPanel = ({
   }
 
   return (
-    <aside className="project-panel" aria-labelledby="projects-heading">
+    <aside aria-labelledby="projects-heading" className="project-panel" hidden={hidden}>
       <div className="project-panel__header">
         <h2 id="projects-heading" ref={headingRef} tabIndex={-1}>
           Projects
