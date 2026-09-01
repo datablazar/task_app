@@ -1,11 +1,20 @@
-export const PLANNER_SCHEMA_VERSION = 6 as const
+export const PLANNER_SCHEMA_VERSION = 8 as const
 
 export type RevisionKind =
   | 'project-created'
+  | 'project-updated'
+  | 'project-deleted'
   | 'task-created'
+  | 'task-deleted'
+  | 'task-moved'
   | 'subtask-created'
   | 'task-completion-changed'
   | 'task-constraints-updated'
+  | 'task-priority-changed'
+  | 'task-strictness-changed'
+  | 'task-schedule-changed'
+  | 'task-notes-updated'
+  | 'task-recurrence-updated'
   | 'fixed-event-created'
   | 'fixed-event-deleted'
   | 'task-session-created'
@@ -13,6 +22,9 @@ export type RevisionKind =
   | 'task-session-lock-toggled'
   | 'dependency-created'
   | 'dependency-deleted'
+  | 'schedule-created'
+  | 'schedule-updated'
+  | 'schedule-deleted'
   | 'schedule-planned'
   | 'plan-undone'
   | 'policy-updated'
@@ -21,6 +33,8 @@ export type RevisionKind =
   | 'schedule-repaired'
 
 export type PolicyPreset = 'balanced' | 'focus' | 'deadline'
+export type Priority = 'asap' | 'high' | 'medium' | 'low'
+export type DeadlineStrictness = 'hard' | 'soft'
 
 export interface PlanningPolicy {
   preset: PolicyPreset
@@ -37,8 +51,16 @@ export const DEFAULT_POLICY: PlanningPolicy = {
 export interface Project {
   id: string
   title: string
+  color?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface RecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly'
+  interval?: number
+  daysOfWeek?: number[] // 1 (Mon) to 7 (Sun)
+  until?: string // ISO date string
 }
 
 export interface Task {
@@ -47,9 +69,16 @@ export interface Task {
   parentTaskId?: string
   title: string
   completed: boolean
+  priority?: Priority
+  deadlineStrictness?: DeadlineStrictness
+  scheduleId?: string
+  recurrence?: RecurrenceRule
+  isRecurringParent?: boolean
+  recurringParentId?: string
   estimateMinutes?: number
   dueAt?: string
   earliestStartAt?: string
+  notes?: string
   createdAt: string
   updatedAt: string
 }
@@ -80,6 +109,28 @@ export const DEFAULT_AVAILABILITY: Availability = {
     { dayOfWeek: 5, startHour: 9, endHour: 17 }, // Friday
   ],
 }
+
+export interface Schedule {
+  id: string
+  name: string
+  isDefault?: boolean
+  availability: Availability
+  color?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const DEFAULT_SCHEDULES: Schedule[] = [
+  {
+    id: 'sched-work',
+    name: 'Work',
+    isDefault: true,
+    availability: DEFAULT_AVAILABILITY,
+    color: '#3b7a57',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  },
+]
 
 export interface PlanRisk {
   taskId: string
@@ -144,6 +195,7 @@ export interface PlannerDocument {
   tasks: Task[]
   dependencies: Dependency[]
   availability: Availability
+  schedules: Schedule[]
   policy: PlanningPolicy
   fixedEvents: FixedEvent[]
   taskSessions: TaskSession[]
@@ -159,6 +211,7 @@ export const createEmptyPlannerDocument = (timeZone = 'UTC'): PlannerDocument =>
   tasks: [],
   dependencies: [],
   availability: DEFAULT_AVAILABILITY,
+  schedules: DEFAULT_SCHEDULES,
   policy: DEFAULT_POLICY,
   fixedEvents: [],
   taskSessions: [],

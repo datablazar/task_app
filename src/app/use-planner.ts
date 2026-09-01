@@ -1,25 +1,30 @@
-import { useCallback, useMemo, useState } from 'react'
-import { createEmptyPlannerDocument } from '../domain/model'
-import { createStableId } from './ids'
-import { generateReferencePlan, repairSchedule } from '../domain/planner-engine'
-import { defaultInterpretationService } from '../domain/interpretation'
-import { parseQuickTaskInput } from '../domain/interpretation/nlp-parser'
-import type { PlannerWorkspace } from '../application/planner-workspace'
+import { useCallback, useMemo, useState } from "react"
+import { createEmptyPlannerDocument } from "../domain/model"
+import { createStableId } from "./ids"
+import { generateReferencePlan, repairSchedule } from "../domain/planner-engine"
+import { defaultInterpretationService } from "../domain/interpretation"
+import { parseQuickTaskInput } from "../domain/interpretation/nlp-parser"
+import { generateRecurringTaskInstances } from "../domain/recurring-engine"
+import type { PlannerWorkspace } from "../application/planner-workspace"
 import type {
+  AvailabilityWindow,
+  DeadlineStrictness,
   PlanningPolicy,
   PlanRisk,
   PlannerDocument,
+  Priority,
   Project,
   ProposalCapability,
   ProposalProvenance,
-} from '../domain/model'
+  RecurrenceRule,
+} from "../domain/model"
 import type {
   ProviderMode,
   TaskInterpretationResult,
-} from '../domain/interpretation'
+} from "../domain/interpretation"
 
 export interface PlannerNotice {
-  tone: 'success' | 'error'
+  tone: "success" | "error"
   message: string
 }
 
@@ -30,10 +35,10 @@ interface UsePlannerOptions {
 }
 
 const getLocalTimeZone = (): string =>
-  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 
-const PROVIDER_MODE_KEY = 'pa_ai_provider_mode'
-const GEMINI_API_KEY = 'pa_gemini_api_key'
+const PROVIDER_MODE_KEY = "pa_ai_provider_mode"
+const GEMINI_API_KEY = "pa_gemini_api_key"
 
 export const usePlanner = ({
   workspace,
@@ -45,14 +50,20 @@ export const usePlanner = ({
     if (!loaded.ok) {
       return {
         document: createEmptyPlannerDocument(getLocalTimeZone()),
-        notice: { tone: 'error' as const, message: loaded.error.message },
+        notice: { tone: "error" as const, message: loaded.error.message },
+      }
+    }
+    if (loaded.value === null) {
+      return {
+        document: createEmptyPlannerDocument(getLocalTimeZone()),
+        notice: { tone: "success" as const, message: "Saved locally." },
       }
     }
     return {
-      document: loaded.value ?? createEmptyPlannerDocument(getLocalTimeZone()),
-      notice: { tone: 'success' as const, message: 'Saved locally.' },
+      document: loaded.value,
+      notice: { tone: "success" as const, message: "Saved locally." },
     }
-  }, [workspace])
+  }, [createId, now, workspace])
 
   const [document, setDocument] = useState<PlannerDocument>(initial.document)
   const [notice, setNotice] = useState<PlannerNotice>(initial.notice)
@@ -60,17 +71,17 @@ export const usePlanner = ({
 
   const [providerMode, setProviderModeState] = useState<ProviderMode>(() => {
     try {
-      return (localStorage.getItem(PROVIDER_MODE_KEY) as ProviderMode) || 'simulated-ai'
+      return (localStorage.getItem(PROVIDER_MODE_KEY) as ProviderMode) || "simulated-ai"
     } catch {
-      return 'simulated-ai'
+      return "simulated-ai"
     }
   })
 
   const [apiKey, setApiKeyState] = useState<string>(() => {
     try {
-      return localStorage.getItem(GEMINI_API_KEY) || ''
+      return localStorage.getItem(GEMINI_API_KEY) || ""
     } catch {
-      return ''
+      return ""
     }
   })
 
@@ -93,42 +104,117 @@ export const usePlanner = ({
   }, [])
 
   const createProject = useCallback(
-    (title: string): Project | undefined => {
+    (title: string, color?: string): Project | undefined => {
       const id = createId()
       const result = workspace.execute(document, {
-        type: 'create-project',
+        type: "create-project",
         id,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         title,
+        color,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return undefined
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Saved locally.' })
+      setNotice({ tone: "success", message: "Saved locally." })
       return result.value.document.projects.find((project) => project.id === id)
     },
     [createId, document, now, workspace],
   )
 
-  const createTask = useCallback(
-    (projectId: string, title: string): boolean => {
+  const deleteProject = useCallback(
+    (projectId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'create-task',
+        type: "delete-project",
+        id: projectId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        projectId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Project deleted." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const createTask = useCallback(
+    (
+      projectId: string,
+      title: string,
+      options?: {
+        priority?: Priority
+        deadlineStrictness?: DeadlineStrictness
+        scheduleId?: string
+        estimateMinutes?: number
+        dueAt?: string
+        earliestStartAt?: string
+        notes?: string
+      },
+    ): boolean => {
+      const result = workspace.execute(document, {
+        type: "create-task",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         projectId,
         title,
+        ...options,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Saved locally.' })
+      setNotice({ tone: "success", message: "Saved locally." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteTask = useCallback(
+    (taskId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "delete-task",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Task deleted." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const moveTask = useCallback(
+    (taskId: string, targetProjectId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "move-task",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        targetProjectId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Task moved." })
       return true
     },
     [createId, document, now, workspace],
@@ -137,7 +223,7 @@ export const usePlanner = ({
   const createSubtask = useCallback(
     (projectId: string, parentTaskId: string, title: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'create-subtask',
+        type: "create-subtask",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -146,11 +232,11 @@ export const usePlanner = ({
         title,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Saved locally.' })
+      setNotice({ tone: "success", message: "Saved locally." })
       return true
     },
     [createId, document, now, workspace],
@@ -160,13 +246,18 @@ export const usePlanner = ({
     (
       taskId: string,
       constraints: {
+        title?: string
         estimateMinutes?: number
         dueAt?: string
         earliestStartAt?: string
+        priority?: Priority
+        deadlineStrictness?: DeadlineStrictness
+        scheduleId?: string
+        notes?: string
       },
     ): boolean => {
       const result = workspace.execute(document, {
-        type: 'update-task-constraints',
+        type: "update-task-constraints",
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -174,11 +265,11 @@ export const usePlanner = ({
         ...constraints,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Task constraints updated.' })
+      setNotice({ tone: "success", message: "Task updated." })
       return true
     },
     [createId, document, now, workspace],
@@ -187,7 +278,7 @@ export const usePlanner = ({
   const setTaskCompletion = useCallback(
     (taskId: string, completed: boolean): boolean => {
       const result = workspace.execute(document, {
-        type: 'set-task-completion',
+        type: "set-task-completion",
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -195,11 +286,116 @@ export const usePlanner = ({
         completed,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Saved locally.' })
+      setNotice({ tone: "success", message: "Saved locally." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setTaskPriority = useCallback(
+    (taskId: string, priority: Priority): boolean => {
+      const result = workspace.execute(document, {
+        type: "set-task-priority",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        priority,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Priority updated." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setTaskDeadlineStrictness = useCallback(
+    (taskId: string, deadlineStrictness: DeadlineStrictness): boolean => {
+      const result = workspace.execute(document, {
+        type: "set-task-strictness",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        deadlineStrictness,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Deadline strictness updated." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setTaskSchedule = useCallback(
+    (taskId: string, scheduleId?: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "set-task-schedule",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        scheduleId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Schedule updated." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setTaskNotes = useCallback(
+    (taskId: string, notes: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "set-task-notes",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        notes,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Saved locally." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setTaskRecurrence = useCallback(
+    (taskId: string, recurrence?: RecurrenceRule): boolean => {
+      const result = workspace.execute(document, {
+        type: "set-task-recurrence",
+        id: taskId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        recurrence,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Recurrence updated." })
       return true
     },
     [createId, document, now, workspace],
@@ -208,7 +404,7 @@ export const usePlanner = ({
   const createFixedEvent = useCallback(
     (title: string, startAt: string, endAt: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'create-fixed-event',
+        type: "create-fixed-event",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -217,11 +413,11 @@ export const usePlanner = ({
         endAt,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Fixed event scheduled.' })
+      setNotice({ tone: "success", message: "Fixed event scheduled." })
       return true
     },
     [createId, document, now, workspace],
@@ -230,18 +426,18 @@ export const usePlanner = ({
   const deleteFixedEvent = useCallback(
     (eventId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'delete-fixed-event',
+        type: "delete-fixed-event",
         id: eventId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         eventId,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Fixed event removed.' })
+      setNotice({ tone: "success", message: "Fixed event removed." })
       return true
     },
     [createId, document, now, workspace],
@@ -250,7 +446,7 @@ export const usePlanner = ({
   const createTaskSession = useCallback(
     (taskId: string, startAt: string, endAt: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'create-task-session',
+        type: "create-task-session",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -259,11 +455,11 @@ export const usePlanner = ({
         endAt,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Task session scheduled.' })
+      setNotice({ tone: "success", message: "Task session scheduled." })
       return true
     },
     [createId, document, now, workspace],
@@ -272,18 +468,18 @@ export const usePlanner = ({
   const deleteTaskSession = useCallback(
     (sessionId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'delete-task-session',
+        type: "delete-task-session",
         id: sessionId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         sessionId,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Task session removed.' })
+      setNotice({ tone: "success", message: "Task session removed." })
       return true
     },
     [createId, document, now, workspace],
@@ -292,7 +488,7 @@ export const usePlanner = ({
   const createDependency = useCallback(
     (fromTaskId: string, toTaskId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'create-dependency',
+        type: "create-dependency",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -300,11 +496,11 @@ export const usePlanner = ({
         toTaskId,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Dependency added.' })
+      setNotice({ tone: "success", message: "Dependency added." })
       return true
     },
     [createId, document, now, workspace],
@@ -313,18 +509,89 @@ export const usePlanner = ({
   const deleteDependency = useCallback(
     (dependencyId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'delete-dependency',
+        type: "delete-dependency",
         id: dependencyId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         dependencyId,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Dependency removed.' })
+      setNotice({ tone: "success", message: "Dependency removed." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const createSchedule = useCallback(
+    (name: string, workingWindows: AvailabilityWindow[], color?: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "create-schedule",
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        name,
+        workingWindows,
+        color,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: `Schedule “${name}” created.` })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const updateSchedule = useCallback(
+    (
+      scheduleId: string,
+      options: {
+        name?: string
+        workingWindows?: AvailabilityWindow[]
+        color?: string
+        isDefault?: boolean
+      },
+    ): boolean => {
+      const result = workspace.execute(document, {
+        type: "update-schedule",
+        id: scheduleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        scheduleId,
+        ...options,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Schedule updated." })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteSchedule = useCallback(
+    (scheduleId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: "delete-schedule",
+        id: scheduleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        scheduleId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: "error", message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: "success", message: "Schedule deleted." })
       return true
     },
     [createId, document, now, workspace],
@@ -338,15 +605,15 @@ export const usePlanner = ({
     const plan = generateReferencePlan(document, { now: now().toISOString() })
     if (!plan.success) {
       setNotice({
-        tone: 'error',
-        message: plan.reasons[0] ?? 'Planning could not complete.',
+        tone: "error",
+        message: plan.reasons[0] ?? "Planning could not complete.",
       })
       setLatestRisks(plan.risks)
       return { success: false, risks: plan.risks, reasons: plan.reasons }
     }
 
     const result = workspace.execute(document, {
-      type: 'apply-plan',
+      type: "apply-plan",
       id: createId(),
       revisionId: createId(),
       occurredAt: now().toISOString(),
@@ -354,16 +621,16 @@ export const usePlanner = ({
     })
 
     if (!result.ok) {
-      setNotice({ tone: 'error', message: result.error.message })
+      setNotice({ tone: "error", message: result.error.message })
       return { success: false, risks: plan.risks, reasons: plan.reasons }
     }
 
     setDocument(result.value.document)
     setLatestRisks(plan.risks)
     setNotice({
-      tone: 'success',
+      tone: "success",
       message: `Scheduled ${plan.sessions.length} session(s)${
-        plan.risks.length > 0 ? ` with ${plan.risks.length} risk(s)` : ''
+        plan.risks.length > 0 ? ` with ${plan.risks.length} risk(s)` : ""
       }.`,
     })
     return { success: true, risks: plan.risks, reasons: plan.reasons }
@@ -371,43 +638,43 @@ export const usePlanner = ({
 
   const undoLastPlan = useCallback((): boolean => {
     const result = workspace.execute(document, {
-      type: 'undo-last-plan',
+      type: "undo-last-plan",
       id: createId(),
       revisionId: createId(),
       occurredAt: now().toISOString(),
     })
     if (!result.ok) {
-      setNotice({ tone: 'error', message: result.error.message })
+      setNotice({ tone: "error", message: result.error.message })
       return false
     }
     setDocument(result.value.document)
     setLatestRisks([])
-    setNotice({ tone: 'success', message: 'Reverted to previous schedule.' })
+    setNotice({ tone: "success", message: "Reverted to previous schedule." })
     return true
   }, [createId, document, now, workspace])
 
   const canUndo = useMemo(
     () =>
       document.revisions.length > 0 &&
-      document.revisions[document.revisions.length - 1]?.kind === 'schedule-planned',
+      document.revisions[document.revisions.length - 1]?.kind === "schedule-planned",
     [document.revisions],
   )
 
   const toggleSessionLock = useCallback(
     (sessionId: string): boolean => {
       const result = workspace.execute(document, {
-        type: 'toggle-task-session-lock',
+        type: "toggle-task-session-lock",
         id: sessionId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         sessionId,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Session pinned state updated.' })
+      setNotice({ tone: "success", message: "Session pinned state updated." })
       return true
     },
     [createId, document, now, workspace],
@@ -416,24 +683,23 @@ export const usePlanner = ({
   const updatePolicy = useCallback(
     (policy: PlanningPolicy): boolean => {
       const result = workspace.execute(document, {
-        type: 'update-policy',
+        type: "update-policy",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         policy,
       })
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: `Planning mode set to ${policy.preset}.` })
+      setNotice({ tone: "success", message: `Planning mode set to ${policy.preset}.` })
       return true
     },
     [createId, document, now, workspace],
   )
 
-  // AI Interpretation and Proposal Functions
   const interpretTask = useCallback(
     async (taskId: string): Promise<TaskInterpretationResult | null> => {
       const task = document.tasks.find((t) => t.id === taskId)
@@ -457,7 +723,7 @@ export const usePlanner = ({
       if (!task) return false
 
       const r1 = workspace.execute(document, {
-        type: 'update-task-constraints',
+        type: "update-task-constraints",
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -467,19 +733,19 @@ export const usePlanner = ({
         earliestStartAt: task.earliestStartAt,
       })
       if (!r1.ok) {
-        setNotice({ tone: 'error', message: r1.error.message })
+        setNotice({ tone: "error", message: r1.error.message })
         return false
       }
 
       const r2 = workspace.execute(r1.value.document, {
-        type: 'record-proposal-decision',
+        type: "record-proposal-decision",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         decision: {
           id: createId(),
           taskId,
-          capability: 'duration-estimate',
+          capability: "duration-estimate",
           provenance,
           confidence: 0.95,
           summary: `Set duration to ${estimateMinutes}m`,
@@ -489,7 +755,7 @@ export const usePlanner = ({
       })
       if (r2.ok) {
         setDocument(r2.value.document)
-        setNotice({ tone: 'success', message: `Applied suggested duration of ${estimateMinutes}m.` })
+        setNotice({ tone: "success", message: `Applied suggested duration of ${estimateMinutes}m.` })
         return true
       }
       return false
@@ -503,7 +769,7 @@ export const usePlanner = ({
       if (!task) return false
 
       const r1 = workspace.execute(document, {
-        type: 'update-task-constraints',
+        type: "update-task-constraints",
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -513,19 +779,19 @@ export const usePlanner = ({
         earliestStartAt: task.earliestStartAt,
       })
       if (!r1.ok) {
-        setNotice({ tone: 'error', message: r1.error.message })
+        setNotice({ tone: "error", message: r1.error.message })
         return false
       }
 
       const r2 = workspace.execute(r1.value.document, {
-        type: 'record-proposal-decision',
+        type: "record-proposal-decision",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         decision: {
           id: createId(),
           taskId,
-          capability: 'deadline-extract',
+          capability: "deadline-extract",
           provenance,
           confidence: 0.95,
           summary: `Set deadline to ${dueAt}`,
@@ -535,7 +801,7 @@ export const usePlanner = ({
       })
       if (r2.ok) {
         setDocument(r2.value.document)
-        setNotice({ tone: 'success', message: 'Applied suggested deadline.' })
+        setNotice({ tone: "success", message: "Applied suggested deadline." })
         return true
       }
       return false
@@ -553,7 +819,7 @@ export const usePlanner = ({
       let currentDoc = document
       for (const title of subtaskTitles) {
         const res = workspace.execute(currentDoc, {
-          type: 'create-subtask',
+          type: "create-subtask",
           id: createId(),
           revisionId: createId(),
           occurredAt: now().toISOString(),
@@ -562,21 +828,21 @@ export const usePlanner = ({
           title,
         })
         if (!res.ok) {
-          setNotice({ tone: 'error', message: res.error.message })
+          setNotice({ tone: "error", message: res.error.message })
           return false
         }
         currentDoc = res.value.document
       }
 
       const decRes = workspace.execute(currentDoc, {
-        type: 'record-proposal-decision',
+        type: "record-proposal-decision",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         decision: {
           id: createId(),
           taskId: parentTaskId,
-          capability: 'subtask-decomposition',
+          capability: "subtask-decomposition",
           provenance,
           confidence: 0.95,
           summary: `Added ${subtaskTitles.length} subtask(s)`,
@@ -586,7 +852,7 @@ export const usePlanner = ({
       })
       if (decRes.ok) {
         setDocument(decRes.value.document)
-        setNotice({ tone: 'success', message: `Added ${subtaskTitles.length} subtask(s).` })
+        setNotice({ tone: "success", message: `Added ${subtaskTitles.length} subtask(s).` })
         return true
       }
       return false
@@ -601,7 +867,7 @@ export const usePlanner = ({
       provenance: ProposalProvenance,
     ): boolean => {
       const r1 = workspace.execute(document, {
-        type: 'create-dependency',
+        type: "create-dependency",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -609,19 +875,19 @@ export const usePlanner = ({
         toTaskId: dependentTaskId,
       })
       if (!r1.ok) {
-        setNotice({ tone: 'error', message: r1.error.message })
+        setNotice({ tone: "error", message: r1.error.message })
         return false
       }
 
       const r2 = workspace.execute(r1.value.document, {
-        type: 'record-proposal-decision',
+        type: "record-proposal-decision",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
         decision: {
           id: createId(),
           taskId: dependentTaskId,
-          capability: 'dependency-infer',
+          capability: "dependency-infer",
           provenance,
           confidence: 0.9,
           summary: `Added prerequisite dependency`,
@@ -631,7 +897,7 @@ export const usePlanner = ({
       })
       if (r2.ok) {
         setDocument(r2.value.document)
-        setNotice({ tone: 'success', message: 'Dependency linked.' })
+        setNotice({ tone: "success", message: "Dependency linked." })
         return true
       }
       return false
@@ -642,7 +908,7 @@ export const usePlanner = ({
   const dismissProposal = useCallback(
     (taskId: string, capability: ProposalCapability, provenance: ProposalProvenance): boolean => {
       const res = workspace.execute(document, {
-        type: 'record-proposal-decision',
+        type: "record-proposal-decision",
         id: createId(),
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -659,7 +925,7 @@ export const usePlanner = ({
       })
       if (res.ok) {
         setDocument(res.value.document)
-        setNotice({ tone: 'success', message: 'Proposal dismissed.' })
+        setNotice({ tone: "success", message: "Proposal dismissed." })
         return true
       }
       return false
@@ -672,13 +938,13 @@ export const usePlanner = ({
       const parsed = parseQuickTaskInput(input, document.projects, now())
       const targetProjectId = parsed.projectId ?? fallbackProjectId ?? document.projects[0]?.id
       if (!targetProjectId) {
-        setNotice({ tone: 'error', message: 'Create a project first before adding tasks.' })
+        setNotice({ tone: "error", message: "Create a project first before adding tasks." })
         return false
       }
 
       const taskId = createId()
       const r1 = workspace.execute(document, {
-        type: 'create-task',
+        type: "create-task",
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
@@ -686,7 +952,7 @@ export const usePlanner = ({
         title: parsed.cleanedTitle,
       })
       if (!r1.ok) {
-        setNotice({ tone: 'error', message: r1.error.message })
+        setNotice({ tone: "error", message: r1.error.message })
         return false
       }
 
@@ -694,7 +960,7 @@ export const usePlanner = ({
 
       if (parsed.estimateMinutes || parsed.dueAt) {
         const r2 = workspace.execute(currentDoc, {
-          type: 'update-task-constraints',
+          type: "update-task-constraints",
           id: taskId,
           revisionId: createId(),
           occurredAt: now().toISOString(),
@@ -708,7 +974,7 @@ export const usePlanner = ({
       }
 
       setDocument(currentDoc)
-      setNotice({ tone: 'success', message: `Task “${parsed.cleanedTitle}” added.` })
+      setNotice({ tone: "success", message: `Task “${parsed.cleanedTitle}” added.` })
       return true
     },
     [createId, document, now, workspace],
@@ -731,12 +997,12 @@ export const usePlanner = ({
   } => {
     const repairResult = repairSchedule(document, { now: now().toISOString() })
     if (repairResult.repairedCount === 0) {
-      setNotice({ tone: 'success', message: 'Schedule is already up to date.' })
+      setNotice({ tone: "success", message: "Schedule is already up to date." })
       return { success: true, repairedCount: 0, risks: [] }
     }
 
     const commandResult = workspace.execute(document, {
-      type: 'repair-schedule',
+      type: "repair-schedule",
       id: createId(),
       revisionId: createId(),
       occurredAt: now().toISOString(),
@@ -744,14 +1010,14 @@ export const usePlanner = ({
     })
 
     if (!commandResult.ok) {
-      setNotice({ tone: 'error', message: commandResult.error.message })
+      setNotice({ tone: "error", message: commandResult.error.message })
       return { success: false, repairedCount: 0, risks: repairResult.risks }
     }
 
     setDocument(commandResult.value.document)
     setLatestRisks(repairResult.risks)
     setNotice({
-      tone: 'success',
+      tone: "success",
       message: `Repaired schedule: moved ${repairResult.repairedCount} overdue session(s) forward.`,
     })
     return {
@@ -761,16 +1027,48 @@ export const usePlanner = ({
     }
   }, [createId, document, now, workspace])
 
+  const triggerRecurrenceGeneration = useCallback(() => {
+    const { newInstances } = generateRecurringTaskInstances(
+      document.tasks,
+      now(),
+      90,
+      createId,
+    )
+    if (newInstances.length === 0) return
+
+    let currentDoc = document
+    for (const inst of newInstances) {
+      const res = workspace.execute(currentDoc, {
+        type: "create-task",
+        id: inst.id,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        projectId: inst.projectId,
+        title: inst.title,
+        priority: inst.priority,
+        deadlineStrictness: inst.deadlineStrictness,
+        scheduleId: inst.scheduleId,
+        estimateMinutes: inst.estimateMinutes,
+        dueAt: inst.dueAt,
+        notes: inst.notes,
+      })
+      if (res.ok) {
+        currentDoc = res.value.document
+      }
+    }
+    setDocument(currentDoc)
+  }, [createId, document, now, workspace])
+
   const restore = useCallback(
     (raw: string): boolean => {
       const result = workspace.restore(raw)
       if (!result.ok) {
-        setNotice({ tone: 'error', message: result.error.message })
+        setNotice({ tone: "error", message: result.error.message })
         return false
       }
       setDocument(result.value)
       setLatestRisks([])
-      setNotice({ tone: 'success', message: 'Backup restored locally.' })
+      setNotice({ tone: "success", message: "Backup restored locally." })
       return true
     },
     [workspace],
@@ -779,10 +1077,10 @@ export const usePlanner = ({
   const exportBackup = useCallback((): string | undefined => {
     const result = workspace.export(document)
     if (!result.ok) {
-      setNotice({ tone: 'error', message: result.error.message })
+      setNotice({ tone: "error", message: result.error.message })
       return undefined
     }
-    setNotice({ tone: 'success', message: 'Backup ready to download.' })
+    setNotice({ tone: "success", message: "Backup ready to download." })
     return result.value
   }, [document, workspace])
 
@@ -797,11 +1095,15 @@ export const usePlanner = ({
     createFixedEvent,
     createProject,
     createQuickTask,
+    createSchedule,
     createSubtask,
     createTask,
     createTaskSession,
     deleteDependency,
     deleteFixedEvent,
+    deleteProject,
+    deleteSchedule,
+    deleteTask,
     deleteTaskSession,
     dismissProposal,
     document,
@@ -809,6 +1111,7 @@ export const usePlanner = ({
     generateAndApplyPlan,
     hasOverdueSessions,
     interpretTask,
+    moveTask,
     notice,
     providerMode,
     repairAndReschedule,
@@ -817,9 +1120,16 @@ export const usePlanner = ({
     setApiKey,
     setProviderMode,
     setTaskCompletion,
+    setTaskDeadlineStrictness,
+    setTaskNotes,
+    setTaskPriority,
+    setTaskRecurrence,
+    setTaskSchedule,
     toggleSessionLock,
+    triggerRecurrenceGeneration,
     undoLastPlan,
     updatePolicy,
+    updateSchedule,
     updateTaskConstraints,
   }
 }

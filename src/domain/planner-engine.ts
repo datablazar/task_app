@@ -1,5 +1,5 @@
-import { getTopologicalOrder, hasDependencyCycle } from './dependency-graph'
-import type { Dependency, PlannerDocument, PlanRisk, TaskSession } from './model'
+import { getTopologicalOrder, hasDependencyCycle } from "./dependency-graph"
+import type { Availability, Dependency, PlannerDocument, PlanRisk, Priority, TaskSession } from "./model"
 
 export interface PlanOptions {
   now: string // ISO UTC timestamp
@@ -22,6 +22,21 @@ interface WorkingSlot {
   isMorning: boolean
 }
 
+const getPriorityWeight = (priority?: Priority): number => {
+  switch (priority) {
+    case "asap":
+      return 4000
+    case "high":
+      return 3000
+    case "medium":
+      return 2000
+    case "low":
+      return 1000
+    default:
+      return 2000
+  }
+}
+
 export const generateReferencePlan = (
   document: PlannerDocument,
   options: PlanOptions,
@@ -38,12 +53,12 @@ export const generateReferencePlan = (
       unscheduledTasks: [],
       risks: [
         {
-          taskId: '',
-          kind: 'unscheduled-work',
-          message: 'Planning halted: Circular dependencies detected in the task graph.',
+          taskId: "",
+          kind: "unscheduled-work",
+          message: "Planning halted: Circular dependencies detected in the task graph.",
         },
       ],
-      reasons: ['Cannot allocate time because tasks have circular dependencies.'],
+      reasons: ["Cannot allocate time because tasks have circular dependencies."],
     }
   }
 
@@ -54,7 +69,7 @@ export const generateReferencePlan = (
       sessions: document.taskSessions.filter((s) => s.locked),
       unscheduledTasks: [],
       risks: [],
-      reasons: ['All tasks are complete. No new sessions needed.'],
+      reasons: ["All tasks are complete. No new sessions needed."],
     }
   }
 
@@ -81,6 +96,8 @@ export const generateReferencePlan = (
   const { sortedTasks } = getTopologicalOrder(uncompletedTasks, document.dependencies)
 
   // 4. Task Prioritization:
+  // - Explicit Priority (ASAP > HIGH > MEDIUM > LOW)
+  // - Hard Deadline urgency
   // - Due date urgency
   // - Criticality (number of downstream dependents)
   // - Creation order (FIFO determinism)
@@ -92,6 +109,14 @@ export const generateReferencePlan = (
   const prioritizedTasks = [...sortedTasks].sort((a, b) => {
     if (isPrerequisite(b.id, a.id, document.dependencies)) return 1
     if (isPrerequisite(a.id, b.id, document.dependencies)) return -1
+
+    // Priority weighting
+    const prioDiff = getPriorityWeight(b.priority) - getPriorityWeight(a.priority)
+    if (prioDiff !== 0) return prioDiff
+
+    // Hard deadline urgency
+    if (a.deadlineStrictness === "hard" && b.deadlineStrictness !== "hard") return -1
+    if (b.deadlineStrictness === "hard" && a.deadlineStrictness !== "hard") return 1
 
     if (a.dueAt && b.dueAt) {
       const diff = Date.parse(a.dueAt) - Date.parse(b.dueAt)
@@ -167,7 +192,7 @@ export const generateReferencePlan = (
     // Two-pass allocation for balanced policy:
     // Pass 1: Allocate up to daily cap (maxDailyWorkMinutes).
     // Pass 2 (fallback): If remaining work exists, spill over without capping to avoid missing deadlines or work.
-    const maxPasses = policy.preset === 'balanced' ? 2 : 1
+    const maxPasses = policy.preset === "balanced" ? 2 : 1
 
     for (let pass = 1; pass <= maxPasses && remainingMinutes > 0; pass++) {
       for (let i = 0; i < availableSlots.length && remainingMinutes > 0; i++) {
@@ -179,14 +204,12 @@ export const generateReferencePlan = (
         }
 
         const currentDayWorkload = dailyWorkloadMinutes.get(slot.dayKey) ?? 0
-        if (pass === 1 && policy.preset === 'balanced' && currentDayWorkload >= maxDailyMinutes) {
-          // Skip slot on full day during pass 1 to balance load across other days
+        if (pass === 1 && policy.preset === "balanced" && currentDayWorkload >= maxDailyMinutes) {
           continue
         }
 
-        // Calculate allocation duration
         let availableInDay = slot.durationMinutes
-        if (pass === 1 && policy.preset === 'balanced') {
+        if (pass === 1 && policy.preset === "balanced") {
           const allowanceLeft = Math.max(0, maxDailyMinutes - currentDayWorkload)
           availableInDay = Math.min(availableInDay, allowanceLeft)
           if (availableInDay <= 0) continue
@@ -237,7 +260,7 @@ export const generateReferencePlan = (
       unscheduledTasks.push({ taskId: task.id, remainingMinutes })
       risks.push({
         taskId: task.id,
-        kind: 'unscheduled-work',
+        kind: "unscheduled-work",
         message: `Task “${task.title}” could not be fully scheduled (${remainingMinutes}m remaining).`,
       })
       reasons.push(
@@ -249,7 +272,7 @@ export const generateReferencePlan = (
         const deficitMinutes = Math.ceil(deficitMs / (60 * 1000))
         risks.push({
           taskId: task.id,
-          kind: 'deadline-missed',
+          kind: "deadline-missed",
           message: `Task “${task.title}” misses its deadline by ${deficitMinutes}m.`,
           dueAt: task.dueAt,
           deficitMinutes,
@@ -315,8 +338,12 @@ const generateAvailableSlots = (
   startDate.setUTCHours(0, 0, 0, 0)
   const nowMs = Date.parse(nowIso)
 
+  // Use schedule working windows if defined, otherwise document.availability
+  const activeAvailability: Availability =
+    document.schedules?.find((s) => s.isDefault)?.availability ?? document.availability
+
   const workingWindowsByDay = new Map<number, { startHour: number; endHour: number }[]>()
-  for (const win of document.availability.workingWindows) {
+  for (const win of activeAvailability.workingWindows) {
     const list = workingWindowsByDay.get(win.dayOfWeek) ?? []
     list.push({ startHour: win.startHour, endHour: win.endHour })
     workingWindowsByDay.set(win.dayOfWeek, list)
@@ -391,9 +418,9 @@ const generateAvailableSlots = (
     }
   }
 
-  // If policy specifies preferredTime, sort slots to prioritize preferred half-day while maintaining chronological order within each day
-  if (document.policy.preferredTime && document.policy.preferredTime !== 'any') {
-    const preferMorning = document.policy.preferredTime === 'morning'
+  // If policy specifies preferredTime, sort slots to prioritize preferred half-day
+  if (document.policy.preferredTime && document.policy.preferredTime !== "any") {
+    const preferMorning = document.policy.preferredTime === "morning"
     slots.sort((a, b) => {
       if (a.dayKey !== b.dayKey) {
         return a.dayKey.localeCompare(b.dayKey)
@@ -433,7 +460,6 @@ export const repairSchedule = (
     const isCompleted = task?.completed ?? false
 
     if (endMs < nowMs && !isCompleted && !session.locked) {
-      // Past session that was not completed and not locked -> needs repair
       repairedCount++
     } else {
       activeSessions.push(session)
@@ -445,11 +471,10 @@ export const repairSchedule = (
       sessions: document.taskSessions,
       repairedCount: 0,
       risks: [],
-      reasons: ['No overdue or stale past sessions required rescheduling.'],
+      reasons: ["No overdue or stale past sessions required rescheduling."],
     }
   }
 
-  // Create temporary document with cleaned sessions, then run reference planner forward from now
   const cleanDoc: PlannerDocument = {
     ...document,
     taskSessions: activeSessions,
@@ -467,4 +492,3 @@ export const repairSchedule = (
     ],
   }
 }
-

@@ -1,33 +1,37 @@
-import { DEFAULT_AVAILABILITY, DEFAULT_POLICY, PLANNER_SCHEMA_VERSION } from './model'
-import { failure, success } from './result'
+import { DEFAULT_AVAILABILITY, DEFAULT_POLICY, DEFAULT_SCHEDULES, PLANNER_SCHEMA_VERSION } from "./model"
+import { failure, success } from "./result"
 import type {
   Availability,
   AvailabilityWindow,
+  DeadlineStrictness,
   Dependency,
   FixedEvent,
   PlannerDocument,
   PlanningPolicy,
   PolicyPreset,
+  Priority,
   Project,
   ProposalCapability,
   ProposalDecision,
   ProposalProvenance,
+  RecurrenceRule,
   Revision,
   RevisionKind,
+  Schedule,
   Task,
   TaskSession,
-} from './model'
-import type { Result } from './result'
-import { hasDependencyCycle } from './dependency-graph'
+} from "./model"
+import type { Result } from "./result"
+import { hasDependencyCycle } from "./dependency-graph"
 
 const maximumTitleLength = 200
 const maximumReasonLength = 300
 
 export interface BackupFailure {
   code:
-    | 'invalid-json'
-    | 'invalid-backup'
-    | 'unsupported-version'
+    | "invalid-json"
+    | "invalid-backup"
+    | "unsupported-version"
   message: string
 }
 
@@ -47,8 +51,8 @@ export const parseBackup = (raw: string): Result<PlannerDocument, BackupFailure>
     candidate = JSON.parse(raw) as unknown
   } catch {
     return failure({
-      code: 'invalid-json',
-      message: 'This backup is not valid JSON.',
+      code: "invalid-json",
+      message: "This backup is not valid JSON.",
     })
   }
 
@@ -59,23 +63,23 @@ export const validatePlannerDocument = (
   candidate: unknown,
 ): Result<PlannerDocument, BackupFailure> => {
   if (!isRecord(candidate)) {
-    return invalidBackup('A backup must contain a planner document.')
+    return invalidBackup("A backup must contain a planner document.")
   }
 
-  // Handle migration from earlier versions to current schema (v6)
+  // Handle migration from earlier versions to current schema (v8)
   let docRecord = candidate
   if (docRecord.schemaVersion === 1) {
     if (
       !hasOnlyKeys(docRecord, [
-        'schemaVersion',
-        'timeZone',
-        'revision',
-        'projects',
-        'tasks',
-        'revisions',
+        "schemaVersion",
+        "timeZone",
+        "revision",
+        "projects",
+        "tasks",
+        "revisions",
       ])
     ) {
-      return invalidBackup('A backup contains unsupported document fields.')
+      return invalidBackup("A backup contains unsupported document fields.")
     }
     docRecord = {
       ...docRecord,
@@ -84,112 +88,141 @@ export const validatePlannerDocument = (
       taskSessions: [],
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
+      schedules: DEFAULT_SCHEDULES,
       policy: DEFAULT_POLICY,
       proposals: [],
     }
   } else if (docRecord.schemaVersion === 2 || docRecord.schemaVersion === 3) {
     if (
       !hasOnlyKeys(docRecord, [
-        'schemaVersion',
-        'timeZone',
-        'revision',
-        'projects',
-        'tasks',
-        'fixedEvents',
-        'taskSessions',
-        'revisions',
+        "schemaVersion",
+        "timeZone",
+        "revision",
+        "projects",
+        "tasks",
+        "fixedEvents",
+        "taskSessions",
+        "revisions",
       ])
     ) {
-      return invalidBackup('A backup contains unsupported document fields.')
+      return invalidBackup("A backup contains unsupported document fields.")
     }
     docRecord = {
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
+      schedules: DEFAULT_SCHEDULES,
       policy: DEFAULT_POLICY,
       proposals: [],
     }
   } else if (docRecord.schemaVersion === 4) {
     if (
       !hasOnlyKeys(docRecord, [
-        'schemaVersion',
-        'timeZone',
-        'revision',
-        'projects',
-        'tasks',
-        'dependencies',
-        'availability',
-        'fixedEvents',
-        'taskSessions',
-        'revisions',
+        "schemaVersion",
+        "timeZone",
+        "revision",
+        "projects",
+        "tasks",
+        "dependencies",
+        "availability",
+        "fixedEvents",
+        "taskSessions",
+        "revisions",
       ])
     ) {
-      return invalidBackup('A backup contains unsupported document fields.')
+      return invalidBackup("A backup contains unsupported document fields.")
     }
     docRecord = {
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
       policy: DEFAULT_POLICY,
       proposals: [],
     }
   } else if (docRecord.schemaVersion === 5) {
     if (
       !hasOnlyKeys(docRecord, [
-        'schemaVersion',
-        'timeZone',
-        'revision',
-        'projects',
-        'tasks',
-        'dependencies',
-        'availability',
-        'policy',
-        'fixedEvents',
-        'taskSessions',
-        'revisions',
+        "schemaVersion",
+        "timeZone",
+        "revision",
+        "projects",
+        "tasks",
+        "dependencies",
+        "availability",
+        "policy",
+        "fixedEvents",
+        "taskSessions",
+        "revisions",
       ])
     ) {
-      return invalidBackup('A backup contains unsupported document fields.')
+      return invalidBackup("A backup contains unsupported document fields.")
     }
     docRecord = {
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
       proposals: [],
+    }
+  } else if (docRecord.schemaVersion === 6 || docRecord.schemaVersion === 7) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        "schemaVersion",
+        "timeZone",
+        "revision",
+        "projects",
+        "tasks",
+        "dependencies",
+        "availability",
+        "policy",
+        "fixedEvents",
+        "taskSessions",
+        "proposals",
+        "revisions",
+      ])
+    ) {
+      return invalidBackup("A backup contains unsupported document fields.")
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
     }
   }
 
   if (
     !hasOnlyKeys(docRecord, [
-      'schemaVersion',
-      'timeZone',
-      'revision',
-      'projects',
-      'tasks',
-      'dependencies',
-      'availability',
-      'policy',
-      'fixedEvents',
-      'taskSessions',
-      'proposals',
-      'revisions',
+      "schemaVersion",
+      "timeZone",
+      "revision",
+      "projects",
+      "tasks",
+      "dependencies",
+      "availability",
+      "schedules",
+      "policy",
+      "fixedEvents",
+      "taskSessions",
+      "proposals",
+      "revisions",
     ])
   ) {
-    return invalidBackup('A backup contains unsupported document fields.')
+    return invalidBackup("A backup contains unsupported document fields.")
   }
 
   if (docRecord.schemaVersion !== PLANNER_SCHEMA_VERSION) {
     return failure({
-      code: 'unsupported-version',
+      code: "unsupported-version",
       message: `This backup uses an unsupported schema version: ${String(docRecord.schemaVersion)}.`,
     })
   }
 
   if (!isIanaTimeZone(docRecord.timeZone)) {
-    return invalidBackup('A backup needs a valid IANA time zone.')
+    return invalidBackup("A backup needs a valid IANA time zone.")
   }
 
   if (!isNonNegativeInteger(docRecord.revision)) {
-    return invalidBackup('A backup needs a non-negative revision number.')
+    return invalidBackup("A backup needs a non-negative revision number.")
   }
   const documentRevision = docRecord.revision
 
@@ -213,6 +246,11 @@ export const validatePlannerDocument = (
   const availability = parseAvailability(docRecord.availability)
   if (!availability.ok) {
     return availability
+  }
+
+  const schedules = parseSchedules(docRecord.schedules, identifiers)
+  if (!schedules.ok) {
+    return schedules
   }
 
   const policy = parsePolicy(docRecord.policy)
@@ -248,6 +286,7 @@ export const validatePlannerDocument = (
     tasks: tasks.value,
     dependencies: dependencies.value,
     availability: availability.value,
+    schedules: schedules.value,
     policy: policy.value,
     fixedEvents: fixedEvents.value,
     taskSessions: taskSessions.value,
@@ -261,35 +300,44 @@ const parseProjects = (
   identifiers: Set<string>,
 ): Result<Project[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Projects must be an array.')
+    return invalidBackup("Projects must be an array.")
   }
 
   const projects: Project[] = []
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'title', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, ["id", "title", "color", "createdAt", "updatedAt"]) ||
       !isIdentifier(item.id) ||
       !isTitle(item.title)
     ) {
-      return invalidBackup('Every project needs a stable ID and a valid title.')
+      return invalidBackup("Every project needs a stable ID and a valid title.")
+    }
+    if (item.color !== undefined && (typeof item.color !== "string" || item.color.length > 50)) {
+      return invalidBackup("Project color must be a valid color string.")
     }
     if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
-      return invalidBackup('Every project needs UTC creation and update timestamps.')
+      return invalidBackup("Every project needs UTC creation and update timestamps.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Project IDs must be unique.')
+      return invalidBackup("Project IDs must be unique.")
     }
     identifiers.add(item.id)
-    projects.push({
+    const project: Project = {
       id: item.id,
       title: item.title,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-    })
+    }
+    if (typeof item.color === "string") project.color = item.color
+    projects.push(project)
   }
   return success(projects)
 }
+
+const allowedPriorities: readonly Priority[] = ["asap", "high", "medium", "low"]
+const allowedStrictness: readonly DeadlineStrictness[] = ["hard", "soft"]
+const allowedFrequencies = ["daily", "weekly", "biweekly", "monthly"]
 
 const parseTasks = (
   candidate: unknown,
@@ -297,7 +345,7 @@ const parseTasks = (
   identifiers: Set<string>,
 ): Result<Task[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Tasks must be an array.')
+    return invalidBackup("Tasks must be an array.")
   }
 
   const projectIds = new Set(projects.map((project) => project.id))
@@ -306,57 +354,90 @@ const parseTasks = (
     if (
       !isRecord(item) ||
       !hasOnlyKeys(item, [
-        'id',
-        'projectId',
-        'parentTaskId',
-        'title',
-        'completed',
-        'estimateMinutes',
-        'dueAt',
-        'earliestStartAt',
-        'createdAt',
-        'updatedAt',
+        "id",
+        "projectId",
+        "parentTaskId",
+        "title",
+        "completed",
+        "priority",
+        "deadlineStrictness",
+        "scheduleId",
+        "recurrence",
+        "isRecurringParent",
+        "recurringParentId",
+        "estimateMinutes",
+        "dueAt",
+        "earliestStartAt",
+        "notes",
+        "createdAt",
+        "updatedAt",
       ]) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.projectId) ||
       !isTitle(item.title) ||
-      typeof item.completed !== 'boolean'
+      typeof item.completed !== "boolean"
     ) {
-      return invalidBackup('Every task needs valid IDs, a title and a completion state.')
+      return invalidBackup("Every task needs valid IDs, a title and a completion state.")
+    }
+    if (item.priority !== undefined && (typeof item.priority !== "string" || !allowedPriorities.includes(item.priority as Priority))) {
+      return invalidBackup("Task priority must be asap, high, medium, or low.")
+    }
+    if (item.deadlineStrictness !== undefined && (typeof item.deadlineStrictness !== "string" || !allowedStrictness.includes(item.deadlineStrictness as DeadlineStrictness))) {
+      return invalidBackup("Task deadline strictness must be hard or soft.")
+    }
+    if (item.scheduleId !== undefined && !isIdentifier(item.scheduleId)) {
+      return invalidBackup("Task scheduleId must be a valid identifier.")
+    }
+    if (item.recurringParentId !== undefined && !isIdentifier(item.recurringParentId)) {
+      return invalidBackup("Task recurringParentId must be a valid identifier.")
+    }
+    if (item.isRecurringParent !== undefined && typeof item.isRecurringParent !== "boolean") {
+      return invalidBackup("Task isRecurringParent must be a boolean.")
+    }
+    if (item.recurrence !== undefined) {
+      if (!isRecord(item.recurrence) || !hasOnlyKeys(item.recurrence, ["frequency", "interval", "daysOfWeek", "until"])) {
+        return invalidBackup("Task recurrence must be a valid recurrence rule.")
+      }
+      if (typeof item.recurrence.frequency !== "string" || !allowedFrequencies.includes(item.recurrence.frequency)) {
+        return invalidBackup("Task recurrence frequency must be daily, weekly, biweekly, or monthly.")
+      }
+    }
+    if (item.notes !== undefined && (typeof item.notes !== "string" || item.notes.length > 5000)) {
+      return invalidBackup("Task notes must be a string up to 5000 characters.")
     }
     if (!projectIds.has(item.projectId)) {
-      return invalidBackup('Every task must belong to an imported project.')
+      return invalidBackup("Every task must belong to an imported project.")
     }
     if (item.parentTaskId !== undefined && (!isIdentifier(item.parentTaskId) || item.parentTaskId === item.id)) {
-      return invalidBackup('Subtasks need a valid, distinct parent task ID.')
+      return invalidBackup("Subtasks need a valid, distinct parent task ID.")
     }
     if (
       item.estimateMinutes !== undefined &&
-      (typeof item.estimateMinutes !== 'number' ||
+      (typeof item.estimateMinutes !== "number" ||
         !Number.isInteger(item.estimateMinutes) ||
         item.estimateMinutes <= 0 ||
         item.estimateMinutes > 1440)
     ) {
-      return invalidBackup('Task estimated duration must be an integer between 1 and 1440 minutes.')
+      return invalidBackup("Task estimated duration must be an integer between 1 and 1440 minutes.")
     }
     if (item.dueAt !== undefined && !isUtcTimestamp(item.dueAt)) {
-      return invalidBackup('Task due date must be a valid UTC timestamp.')
+      return invalidBackup("Task due date must be a valid UTC timestamp.")
     }
     if (item.earliestStartAt !== undefined && !isUtcTimestamp(item.earliestStartAt)) {
-      return invalidBackup('Task earliest start date must be a valid UTC timestamp.')
+      return invalidBackup("Task earliest start date must be a valid UTC timestamp.")
     }
     if (
-      typeof item.earliestStartAt === 'string' &&
-      typeof item.dueAt === 'string' &&
+      typeof item.earliestStartAt === "string" &&
+      typeof item.dueAt === "string" &&
       Date.parse(item.earliestStartAt) >= Date.parse(item.dueAt)
     ) {
-      return invalidBackup('Task earliest start date must be before due date.')
+      return invalidBackup("Task earliest start date must be before due date.")
     }
     if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
-      return invalidBackup('Every task needs UTC creation and update timestamps.')
+      return invalidBackup("Every task needs UTC creation and update timestamps.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Project and task IDs must be unique together.')
+      return invalidBackup("Project and task IDs must be unique together.")
     }
     identifiers.add(item.id)
 
@@ -368,10 +449,17 @@ const parseTasks = (
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }
-    if (typeof item.parentTaskId === 'string') task.parentTaskId = item.parentTaskId
-    if (typeof item.estimateMinutes === 'number') task.estimateMinutes = item.estimateMinutes
-    if (typeof item.dueAt === 'string') task.dueAt = item.dueAt
-    if (typeof item.earliestStartAt === 'string') task.earliestStartAt = item.earliestStartAt
+    if (typeof item.parentTaskId === "string") task.parentTaskId = item.parentTaskId
+    if (typeof item.priority === "string") task.priority = item.priority as Priority
+    if (typeof item.deadlineStrictness === "string") task.deadlineStrictness = item.deadlineStrictness as DeadlineStrictness
+    if (typeof item.scheduleId === "string") task.scheduleId = item.scheduleId
+    if (isRecord(item.recurrence)) task.recurrence = item.recurrence as unknown as RecurrenceRule
+    if (typeof item.isRecurringParent === "boolean") task.isRecurringParent = item.isRecurringParent
+    if (typeof item.recurringParentId === "string") task.recurringParentId = item.recurringParentId
+    if (typeof item.estimateMinutes === "number") task.estimateMinutes = item.estimateMinutes
+    if (typeof item.dueAt === "string") task.dueAt = item.dueAt
+    if (typeof item.earliestStartAt === "string") task.earliestStartAt = item.earliestStartAt
+    if (typeof item.notes === "string") task.notes = item.notes
 
     tasks.push(task)
   }
@@ -381,10 +469,10 @@ const parseTasks = (
     if (task.parentTaskId !== undefined) {
       const parent = taskMap.get(task.parentTaskId)
       if (!parent || parent.projectId !== task.projectId) {
-        return invalidBackup('Subtasks must belong to an imported parent task in the same project.')
+        return invalidBackup("Subtasks must belong to an imported parent task in the same project.")
       }
       if (parent.parentTaskId !== undefined) {
-        return invalidBackup('Subtasks cannot be nested under another subtask.')
+        return invalidBackup("Subtasks cannot be nested under another subtask.")
       }
     }
   }
@@ -398,7 +486,7 @@ const parseDependencies = (
   identifiers: Set<string>,
 ): Result<Dependency[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Dependencies must be an array.')
+    return invalidBackup("Dependencies must be an array.")
   }
 
   const taskIds = new Set(tasks.map((task) => task.id))
@@ -407,22 +495,22 @@ const parseDependencies = (
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'fromTaskId', 'toTaskId', 'createdAt']) ||
+      !hasOnlyKeys(item, ["id", "fromTaskId", "toTaskId", "createdAt"]) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.fromTaskId) ||
       !isIdentifier(item.toTaskId) ||
       !isUtcTimestamp(item.createdAt)
     ) {
-      return invalidBackup('Every dependency needs valid IDs and a UTC timestamp.')
+      return invalidBackup("Every dependency needs valid IDs and a UTC timestamp.")
     }
     if (item.fromTaskId === item.toTaskId) {
-      return invalidBackup('A dependency cannot link a task to itself.')
+      return invalidBackup("A dependency cannot link a task to itself.")
     }
     if (!taskIds.has(item.fromTaskId) || !taskIds.has(item.toTaskId)) {
-      return invalidBackup('Every dependency must link imported tasks.')
+      return invalidBackup("Every dependency must link imported tasks.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Dependency IDs must be unique.')
+      return invalidBackup("Dependency IDs must be unique.")
     }
     identifiers.add(item.id)
     dependencies.push({
@@ -434,41 +522,41 @@ const parseDependencies = (
   }
 
   if (hasDependencyCycle(dependencies)) {
-    return invalidBackup('Dependencies cannot contain circular relationships.')
+    return invalidBackup("Dependencies cannot contain circular relationships.")
   }
 
   return success(dependencies)
 }
 
 const parseAvailability = (candidate: unknown): Result<Availability, BackupFailure> => {
-  if (!isRecord(candidate) || !hasOnlyKeys(candidate, ['workingWindows'])) {
-    return invalidBackup('Availability must define working windows.')
+  if (!isRecord(candidate) || !hasOnlyKeys(candidate, ["workingWindows"])) {
+    return invalidBackup("Availability must define working windows.")
   }
 
   if (!Array.isArray(candidate.workingWindows)) {
-    return invalidBackup('Availability working windows must be an array.')
+    return invalidBackup("Availability working windows must be an array.")
   }
 
   const windows: AvailabilityWindow[] = []
   for (const item of candidate.workingWindows) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['dayOfWeek', 'startHour', 'endHour']) ||
-      typeof item.dayOfWeek !== 'number' ||
+      !hasOnlyKeys(item, ["dayOfWeek", "startHour", "endHour"]) ||
+      typeof item.dayOfWeek !== "number" ||
       !Number.isInteger(item.dayOfWeek) ||
       item.dayOfWeek < 1 ||
       item.dayOfWeek > 7 ||
-      typeof item.startHour !== 'number' ||
+      typeof item.startHour !== "number" ||
       !Number.isInteger(item.startHour) ||
       item.startHour < 0 ||
       item.startHour > 23 ||
-      typeof item.endHour !== 'number' ||
+      typeof item.endHour !== "number" ||
       !Number.isInteger(item.endHour) ||
       item.endHour < 1 ||
       item.endHour > 24 ||
       item.startHour >= item.endHour
     ) {
-      return invalidBackup('Availability windows must have valid day (1-7) and startHour < endHour (0-24).')
+      return invalidBackup("Availability windows must have valid day (1-7) and startHour < endHour (0-24).")
     }
     windows.push({
       dayOfWeek: item.dayOfWeek,
@@ -480,42 +568,83 @@ const parseAvailability = (candidate: unknown): Result<Availability, BackupFailu
   return success({ workingWindows: windows })
 }
 
-const policyPresets: readonly PolicyPreset[] = ['balanced', 'focus', 'deadline']
-
-const parsePolicy = (candidate: unknown): Result<PlanningPolicy, BackupFailure> => {
-  if (!isRecord(candidate) || !hasOnlyKeys(candidate, ['preset', 'maxDailyWorkMinutes', 'preferredTime'])) {
-    return invalidBackup('Policy must be an object with valid settings.')
+const parseSchedules = (
+  candidate: unknown,
+  identifiers: Set<string>,
+): Result<Schedule[], BackupFailure> => {
+  if (!Array.isArray(candidate)) {
+    return invalidBackup("Schedules must be an array.")
   }
 
-  if (typeof candidate.preset !== 'string' || !policyPresets.includes(candidate.preset as PolicyPreset)) {
-    return invalidBackup('Policy preset must be balanced, focus, or deadline.')
+  const schedules: Schedule[] = []
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ["id", "name", "isDefault", "availability", "color", "createdAt", "updatedAt"]) ||
+      !isIdentifier(item.id) ||
+      !isTitle(item.name) ||
+      !isUtcTimestamp(item.createdAt) ||
+      !isUtcTimestamp(item.updatedAt)
+    ) {
+      return invalidBackup("Every schedule needs valid schema properties.")
+    }
+    const avail = parseAvailability(item.availability)
+    if (!avail.ok) return avail
+    if (identifiers.has(item.id)) {
+      return invalidBackup("Schedule IDs must be unique.")
+    }
+    identifiers.add(item.id)
+    const sched: Schedule = {
+      id: item.id,
+      name: item.name,
+      availability: avail.value,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }
+    if (typeof item.isDefault === "boolean") sched.isDefault = item.isDefault
+    if (typeof item.color === "string") sched.color = item.color
+    schedules.push(sched)
+  }
+
+  return success(schedules.length > 0 ? schedules : DEFAULT_SCHEDULES)
+}
+
+const policyPresets: readonly PolicyPreset[] = ["balanced", "focus", "deadline"]
+
+const parsePolicy = (candidate: unknown): Result<PlanningPolicy, BackupFailure> => {
+  if (!isRecord(candidate) || !hasOnlyKeys(candidate, ["preset", "maxDailyWorkMinutes", "preferredTime"])) {
+    return invalidBackup("Policy must be an object with valid settings.")
+  }
+
+  if (typeof candidate.preset !== "string" || !policyPresets.includes(candidate.preset as PolicyPreset)) {
+    return invalidBackup("Policy preset must be balanced, focus, or deadline.")
   }
 
   if (
     candidate.maxDailyWorkMinutes !== undefined &&
-    (typeof candidate.maxDailyWorkMinutes !== 'number' ||
+    (typeof candidate.maxDailyWorkMinutes !== "number" ||
       !Number.isInteger(candidate.maxDailyWorkMinutes) ||
       candidate.maxDailyWorkMinutes < 30 ||
       candidate.maxDailyWorkMinutes > 1440)
   ) {
-    return invalidBackup('Policy maxDailyWorkMinutes must be an integer between 30 and 1440.')
+    return invalidBackup("Policy maxDailyWorkMinutes must be an integer between 30 and 1440.")
   }
 
   if (
     candidate.preferredTime !== undefined &&
-    !['morning', 'afternoon', 'any'].includes(candidate.preferredTime as string)
+    !["morning", "afternoon", "any"].includes(candidate.preferredTime as string)
   ) {
-    return invalidBackup('Policy preferredTime must be morning, afternoon, or any.')
+    return invalidBackup("Policy preferredTime must be morning, afternoon, or any.")
   }
 
   return success({
     preset: candidate.preset as PolicyPreset,
     maxDailyWorkMinutes:
-      typeof candidate.maxDailyWorkMinutes === 'number' ? candidate.maxDailyWorkMinutes : 360,
+      typeof candidate.maxDailyWorkMinutes === "number" ? candidate.maxDailyWorkMinutes : 360,
     preferredTime:
-      typeof candidate.preferredTime === 'string'
-        ? (candidate.preferredTime as 'morning' | 'afternoon' | 'any')
-        : 'any',
+      typeof candidate.preferredTime === "string"
+        ? (candidate.preferredTime as "morning" | "afternoon" | "any")
+        : "any",
   })
 }
 
@@ -524,14 +653,14 @@ const parseFixedEvents = (
   identifiers: Set<string>,
 ): Result<FixedEvent[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Fixed events must be an array.')
+    return invalidBackup("Fixed events must be an array.")
   }
 
   const events: FixedEvent[] = []
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'title', 'startAt', 'endAt', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, ["id", "title", "startAt", "endAt", "createdAt", "updatedAt"]) ||
       !isIdentifier(item.id) ||
       !isTitle(item.title) ||
       !isUtcTimestamp(item.startAt) ||
@@ -540,10 +669,10 @@ const parseFixedEvents = (
       !isUtcTimestamp(item.createdAt) ||
       !isUtcTimestamp(item.updatedAt)
     ) {
-      return invalidBackup('Every fixed event needs a valid time range and UTC timestamps.')
+      return invalidBackup("Every fixed event needs a valid time range and UTC timestamps.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Event IDs must be unique.')
+      return invalidBackup("Event IDs must be unique.")
     }
     identifiers.add(item.id)
     events.push({
@@ -564,7 +693,7 @@ const parseTaskSessions = (
   identifiers: Set<string>,
 ): Result<TaskSession[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Task sessions must be an array.')
+    return invalidBackup("Task sessions must be an array.")
   }
 
   const taskIds = new Set(tasks.map((task) => task.id))
@@ -572,23 +701,23 @@ const parseTaskSessions = (
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'taskId', 'startAt', 'endAt', 'locked', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, ["id", "taskId", "startAt", "endAt", "locked", "createdAt", "updatedAt"]) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.taskId) ||
       !isUtcTimestamp(item.startAt) ||
       !isUtcTimestamp(item.endAt) ||
       Date.parse(item.startAt) >= Date.parse(item.endAt) ||
-      (item.locked !== undefined && typeof item.locked !== 'boolean') ||
+      (item.locked !== undefined && typeof item.locked !== "boolean") ||
       !isUtcTimestamp(item.createdAt) ||
       !isUtcTimestamp(item.updatedAt)
     ) {
-      return invalidBackup('Every task session needs a valid time range and UTC timestamps.')
+      return invalidBackup("Every task session needs a valid time range and UTC timestamps.")
     }
     if (!taskIds.has(item.taskId)) {
-      return invalidBackup('Every task session must reference an imported task.')
+      return invalidBackup("Every task session must reference an imported task.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Session IDs must be unique.')
+      return invalidBackup("Session IDs must be unique.")
     }
     identifiers.add(item.id)
     const session: TaskSession = {
@@ -608,16 +737,16 @@ const parseTaskSessions = (
 }
 
 const proposalCapabilities: readonly ProposalCapability[] = [
-  'duration-estimate',
-  'subtask-decomposition',
-  'deadline-extract',
-  'dependency-infer',
+  "duration-estimate",
+  "subtask-decomposition",
+  "deadline-extract",
+  "dependency-infer",
 ]
 
 const proposalProvenances: readonly ProposalProvenance[] = [
-  'heuristic',
-  'simulated-ai',
-  'gemini-api',
+  "heuristic",
+  "simulated-ai",
+  "gemini-api",
 ]
 
 const parseProposals = (
@@ -626,7 +755,7 @@ const parseProposals = (
   identifiers: Set<string>,
 ): Result<ProposalDecision[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Proposals must be an array.')
+    return invalidBackup("Proposals must be an array.")
   }
 
   const taskIds = new Set(tasks.map((task) => task.id))
@@ -636,36 +765,36 @@ const parseProposals = (
     if (
       !isRecord(item) ||
       !hasOnlyKeys(item, [
-        'id',
-        'taskId',
-        'capability',
-        'provenance',
-        'confidence',
-        'summary',
-        'accepted',
-        'occurredAt',
+        "id",
+        "taskId",
+        "capability",
+        "provenance",
+        "confidence",
+        "summary",
+        "accepted",
+        "occurredAt",
       ]) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.taskId) ||
-      typeof item.capability !== 'string' ||
+      typeof item.capability !== "string" ||
       !proposalCapabilities.includes(item.capability as ProposalCapability) ||
-      typeof item.provenance !== 'string' ||
+      typeof item.provenance !== "string" ||
       !proposalProvenances.includes(item.provenance as ProposalProvenance) ||
-      typeof item.confidence !== 'number' ||
+      typeof item.confidence !== "number" ||
       item.confidence < 0 ||
       item.confidence > 1 ||
-      typeof item.summary !== 'string' ||
-      typeof item.accepted !== 'boolean' ||
+      typeof item.summary !== "string" ||
+      typeof item.accepted !== "boolean" ||
       !isUtcTimestamp(item.occurredAt)
     ) {
-      return invalidBackup('Every proposal decision needs valid schema properties.')
+      return invalidBackup("Every proposal decision needs valid schema properties.")
     }
 
     if (!taskIds.has(item.taskId)) {
-      return invalidBackup('Every proposal must link an imported task.')
+      return invalidBackup("Every proposal must link an imported task.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Proposal decision IDs must be unique.')
+      return invalidBackup("Proposal decision IDs must be unique.")
     }
     identifiers.add(item.id)
 
@@ -685,24 +814,36 @@ const parseProposals = (
 }
 
 const revisionKinds: readonly RevisionKind[] = [
-  'project-created',
-  'task-created',
-  'subtask-created',
-  'task-completion-changed',
-  'task-constraints-updated',
-  'fixed-event-created',
-  'fixed-event-deleted',
-  'task-session-created',
-  'task-session-deleted',
-  'task-session-lock-toggled',
-  'dependency-created',
-  'dependency-deleted',
-  'schedule-planned',
-  'plan-undone',
-  'policy-updated',
-  'proposal-accepted',
-  'proposal-rejected',
-  'schedule-repaired',
+  "project-created",
+  "project-updated",
+  "project-deleted",
+  "task-created",
+  "task-deleted",
+  "task-moved",
+  "subtask-created",
+  "task-completion-changed",
+  "task-constraints-updated",
+  "task-priority-changed",
+  "task-strictness-changed",
+  "task-schedule-changed",
+  "task-notes-updated",
+  "task-recurrence-updated",
+  "fixed-event-created",
+  "fixed-event-deleted",
+  "task-session-created",
+  "task-session-deleted",
+  "task-session-lock-toggled",
+  "dependency-created",
+  "dependency-deleted",
+  "schedule-created",
+  "schedule-updated",
+  "schedule-deleted",
+  "schedule-planned",
+  "plan-undone",
+  "policy-updated",
+  "proposal-accepted",
+  "proposal-rejected",
+  "schedule-repaired",
 ]
 
 const parseRevisions = (
@@ -710,10 +851,10 @@ const parseRevisions = (
   documentRevision: number,
 ): Result<Revision[], BackupFailure> => {
   if (!Array.isArray(candidate)) {
-    return invalidBackup('Revisions must be an array.')
+    return invalidBackup("Revisions must be an array.")
   }
   if (candidate.length !== documentRevision) {
-    return invalidBackup('The document revision must match the revision history.')
+    return invalidBackup("The document revision must match the revision history.")
   }
 
   const identifiers = new Set<string>()
@@ -721,7 +862,7 @@ const parseRevisions = (
   for (const [index, item] of candidate.entries()) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'number', 'kind', 'reason', 'occurredAt', 'snapshot']) ||
+      !hasOnlyKeys(item, ["id", "number", "kind", "reason", "occurredAt", "snapshot"]) ||
       !isIdentifier(item.id) ||
       !Number.isInteger(item.number) ||
       item.number !== index + 1 ||
@@ -729,13 +870,13 @@ const parseRevisions = (
       !isReason(item.reason) ||
       !isUtcTimestamp(item.occurredAt)
     ) {
-      return invalidBackup('Every revision needs valid ordered audit information.')
+      return invalidBackup("Every revision needs valid ordered audit information.")
     }
-    if (item.snapshot !== undefined && typeof item.snapshot !== 'string') {
-      return invalidBackup('Revision snapshot must be a string.')
+    if (item.snapshot !== undefined && typeof item.snapshot !== "string") {
+      return invalidBackup("Revision snapshot must be a string.")
     }
     if (identifiers.has(item.id)) {
-      return invalidBackup('Revision IDs must be unique.')
+      return invalidBackup("Revision IDs must be unique.")
     }
     identifiers.add(item.id)
     const revision: Revision = {
@@ -745,7 +886,7 @@ const parseRevisions = (
       reason: item.reason,
       occurredAt: item.occurredAt,
     }
-    if (typeof item.snapshot === 'string') {
+    if (typeof item.snapshot === "string") {
       revision.snapshot = item.snapshot
     }
     revisions.push(revision)
@@ -754,29 +895,29 @@ const parseRevisions = (
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 const hasOnlyKeys = (record: Record<string, unknown>, allowed: string[]): boolean =>
   Object.keys(record).every((key) => allowed.includes(key))
 
 const isIdentifier = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0 && value.length <= 128
+  typeof value === "string" && value.trim().length > 0 && value.length <= 128
 
 const isTitle = (value: unknown): value is string =>
-  typeof value === 'string' &&
+  typeof value === "string" &&
   value.trim().length > 0 &&
   value.trim().length <= maximumTitleLength
 
 const isReason = (value: unknown): value is string =>
-  typeof value === 'string' &&
+  typeof value === "string" &&
   value.trim().length > 0 &&
   value.trim().length <= maximumReasonLength
 
 const isRevisionKind = (value: unknown): value is RevisionKind =>
-  typeof value === 'string' && revisionKinds.includes(value as RevisionKind)
+  typeof value === "string" && revisionKinds.includes(value as RevisionKind)
 
 const isUtcTimestamp = (value: unknown): value is string => {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return false
   }
   const instant = new Date(value)
@@ -784,14 +925,14 @@ const isUtcTimestamp = (value: unknown): value is string => {
 }
 
 const isNonNegativeInteger = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 0
+  typeof value === "number" && Number.isInteger(value) && value >= 0
 
 const isIanaTimeZone = (value: unknown): value is string => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
+  if (typeof value !== "string" || value.trim().length === 0) {
     return false
   }
   try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: value }).resolvedOptions()
+    new Intl.DateTimeFormat("en-GB", { timeZone: value }).resolvedOptions()
     return true
   } catch {
     return false
@@ -799,4 +940,4 @@ const isIanaTimeZone = (value: unknown): value is string => {
 }
 
 const invalidBackup = (message: string): Result<never, BackupFailure> =>
-  failure({ code: 'invalid-backup', message })
+  failure({ code: "invalid-backup", message })

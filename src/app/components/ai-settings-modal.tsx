@@ -42,7 +42,7 @@ export const AiSettingsModal = ({
         <form onSubmit={handleSubmit}>
           <div className="ai-settings-modal__body">
             <p className="ai-settings-modal__intro">
-              Choose how PA Planner interprets task titles to propose durations, extract deadlines, decompose subtasks, and infer dependencies.
+              Choose how the planner interprets task titles to propose durations, extract deadlines, decompose subtasks, and infer dependencies.
             </p>
 
             <div className="ai-settings-options">

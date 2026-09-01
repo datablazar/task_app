@@ -1,4 +1,4 @@
-# PA Planner — project packet
+# Planner — project packet
 
 **Use:** read or upload this file first when working on the project. It is the compact current contract, delivery map and active decision rationale. Code, tests and migrations own executable behaviour; Git owns history.
 
@@ -6,7 +6,7 @@
 
 | Item | Current truth |
 |---|---|
-| State | Milestone I5 complete; core personal planner delivered. |
+| State | Spatial UX Refactor, Schema v8, Named Schedules & Recurrence Engine delivered. |
 | Active milestone | **I6 — Reviewable inbox & capture workspace** |
 | Next bounded outcome | Unstructured capture staging, source linking and bulk conversion to validated tasks. |
 | Evidence required | Staged notes never directly mutate calendar until confirmed; exact Undo and zero data loss. |
@@ -84,7 +84,8 @@ For I4, each capability selects a qualified implementation independently after l
 | Choice | Why | Revisit when |
 |---|---|---|
 | Deterministic planner; optional interpretation only returns checked proposals. | Reproducible, offline-safe, explainable and undoable planning with help for incomplete input. | Golden cases show the boundary cannot meet the outcome. |
-| Local versioned data plus tested export/import first. | Proves one-person value without account, synchronisation, privacy or infrastructure overhead. | A demonstrated multi-device, recovery or remote-work need exceeds local backup. |
+| Local versioned data (Schema v8) plus tested export/import first. | Proves one-person value without account, synchronisation, privacy or infrastructure overhead. | A demonstrated multi-device, recovery or remote-work need exceeds local backup. |
+| Editorial Spatial UI (NavDock, multi-mode left drawer, right task inspector, dominant white calendar card). | High-density, calm personal command centre matching editorial desktop workflows. | User research demonstrates a need for multi-window spatial canvases. |
 | Modular monolith with domain, planner and repository boundaries. | Cheap and understandable now; retains real extraction paths. | A second application or deployed boundary genuinely consumes a module. |
 | Remote capability, external calendar access and file processing follow a proven local core, one vertical capability at a time. | Avoids premature cost, privacy, conflict and integration work. | The preceding gate passes and a user benefit cannot be met locally. |
 

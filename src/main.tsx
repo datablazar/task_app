@@ -6,7 +6,7 @@ import './styles.css'
 const root = document.getElementById('root')
 
 if (!root) {
-  throw new Error('PA Planner could not find its application root.')
+  throw new Error('Application root element not found.')
 }
 
 createRoot(root).render(

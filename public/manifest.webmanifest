@@ -1,6 +1,6 @@
 {
-  "name": "PA Planner — Local Command Centre",
-  "short_name": "PA Planner",
+  "name": "Planner — Local Command Centre",
+  "short_name": "Planner",
   "description": "Local-first, deterministic daily and weekly planner with offline intelligence.",
   "start_url": "/",
   "display": "standalone",

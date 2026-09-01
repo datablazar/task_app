@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
-import { PlannerWorkspace } from '../application/planner-workspace'
-import { LocalPlannerRepository } from '../infrastructure/local-planner-repository'
-import { BackupControls } from './components/backup-controls'
-import { CalendarPreview } from './components/calendar-preview'
-import { ProjectPanel } from './components/project-panel'
-import { TaskPanel } from './components/task-panel'
-import { AiProposalDialog } from './components/ai-proposal-dialog'
-import { AiSettingsModal } from './components/ai-settings-modal'
-import { QuickCaptureBar } from './components/quick-capture-bar'
-import { usePlanner } from './use-planner'
-import type { StorageLike } from '../infrastructure/local-planner-repository'
-import type { Task } from '../domain/model'
-import type { TaskInterpretationResult } from '../domain/interpretation'
+import { useEffect, useMemo, useRef, useState } from "react"
+import { PlannerWorkspace } from "../application/planner-workspace"
+import { LocalPlannerRepository } from "../infrastructure/local-planner-repository"
+import { BackupControls } from "./components/backup-controls"
+import { CalendarPreview } from "./components/calendar-preview"
+import { ProjectPanel } from "./components/project-panel"
+import { TaskPanel } from "./components/task-panel"
+import { NavDock } from "./components/nav-dock"
+import { AiProposalDialog } from "./components/ai-proposal-dialog"
+import { AiSettingsModal } from "./components/ai-settings-modal"
+import { ScheduleModal } from "./components/schedule-modal"
+import { RecurringModal } from "./components/recurring-modal"
+import { QuickCaptureBar } from "./components/quick-capture-bar"
+import { usePlanner } from "./use-planner"
+import type { StorageLike } from "../infrastructure/local-planner-repository"
+import type { PolicyPreset, Task } from "../domain/model"
+import type { TaskInterpretationResult } from "../domain/interpretation"
 
 interface PlannerAppProps {
   createId?: () => string
@@ -19,16 +22,11 @@ interface PlannerAppProps {
   storage?: StorageLike
 }
 
-/**
- * Above this width the Projects/Tasks panels are pop-out overlays that
- * default to closed; below it (and wherever matchMedia is unavailable,
- * e.g. tests) they behave as always-present panels in a stacked layout.
- */
-const DESKTOP_BREAKPOINT = '(min-width: 901px)'
+const DESKTOP_BREAKPOINT = "(min-width: 901px)"
 
 const useIsDesktop = (): boolean => {
   const [isDesktop, setIsDesktop] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return true
     }
     try {
@@ -39,7 +37,7 @@ const useIsDesktop = (): boolean => {
   })
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return
     }
     let query: MediaQueryList
@@ -49,8 +47,8 @@ const useIsDesktop = (): boolean => {
       return
     }
     const handleChange = () => setIsDesktop(query.matches)
-    query.addEventListener('change', handleChange)
-    return () => query.removeEventListener('change', handleChange)
+    query.addEventListener("change", handleChange)
+    return () => query.removeEventListener("change", handleChange)
   }, [])
 
   return isDesktop
@@ -66,111 +64,109 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     planner.document.projects[0]?.id ?? null,
   )
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(
+    planner.document.tasks[0]?.id ?? null,
+  )
   const [referenceDate] = useState(() => now?.() ?? new Date())
 
   const isDesktop = useIsDesktop()
-  const [isProjectsOpen, setIsProjectsOpen] = useState(false)
-  const [isTasksOpen, setIsTasksOpen] = useState(false)
-  const showProjectsPanel = isProjectsOpen || !isDesktop
-  const showTasksPanel = isTasksOpen || !isDesktop
+  const [leftDrawerMode, setLeftDrawerMode] = useState<"projects" | "inbox" | null>(null)
+  const [isTaskInspectorOpen, setIsTaskInspectorOpen] = useState(false)
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [viewMode, setViewMode] = useState<"week" | "today">("week")
 
-  // Both panels stay mounted (and keep their draft state) at all times.
-  // Autofocus-on-open must react to an actual desktop open EVENT, not to
-  // `isDesktop && isOpen` as a derived value: that combination also flips
-  // true on an unrelated resize (e.g. a mobile selection already left
-  // isOpen=true, then the window is widened past the breakpoint), which
-  // would steal focus with no open action at all. These counters only
-  // increment at the point of a real desktop-open action, so a resize on
-  // its own never changes them.
   const [projectsFocusToken, setProjectsFocusToken] = useState(0)
-  const [tasksFocusToken, setTasksFocusToken] = useState(0)
+  const quickCaptureInputRef = useRef<HTMLInputElement>(null)
 
-  const toggleProjectsPanel = () => {
-    setIsProjectsOpen((open) => {
-      const next = !open
-      if (next) setProjectsFocusToken((token) => token + 1)
+  // Theme State: light (Editorial Alabaster) vs dark (Obsidian Smoked Glass)
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const saved = localStorage.getItem("planner_theme")
+      if (saved === "dark" || saved === "light") return saved
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    } catch {
+      return "light"
+    }
+  })
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "light" ? "dark" : "light"
+    setTheme(nextTheme)
+    try {
+      localStorage.setItem("planner_theme", nextTheme)
+    } catch {
+      // ignore
+    }
+  }
+
+  // Modals State
+  const [showAiSettings, setShowAiSettings] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [showRecurringModal, setShowRecurringModal] = useState(false)
+  const [activeAiTask, setActiveAiTask] = useState<Task | null>(null)
+  const [activeInterpretation, setActiveInterpretation] = useState<TaskInterpretationResult | null>(null)
+
+  // Global keyboard shortcuts (Escape closes drawers & modals in order)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeAiTask || showAiSettings || showScheduleModal || showRecurringModal) {
+          setActiveAiTask(null)
+          setActiveInterpretation(null)
+          setShowAiSettings(false)
+          setShowScheduleModal(false)
+          setShowRecurringModal(false)
+        } else if (isTaskInspectorOpen) {
+          setIsTaskInspectorOpen(false)
+        } else if (leftDrawerMode !== null) {
+          setLeftDrawerMode(null)
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [activeAiTask, isTaskInspectorOpen, leftDrawerMode, showAiSettings, showRecurringModal, showScheduleModal])
+
+  const toggleProjectsDrawer = () => {
+    setLeftDrawerMode((curr) => {
+      const next = curr === "projects" ? null : "projects"
+      if (next === "projects") setProjectsFocusToken((t) => t + 1)
       return next
     })
   }
 
-  const toggleTasksPanel = () => {
-    setIsTasksOpen((open) => {
-      const next = !open
-      if (next) setTasksFocusToken((token) => token + 1)
+  const toggleInboxDrawer = () => {
+    setLeftDrawerMode((curr) => {
+      const next = curr === "inbox" ? null : "inbox"
+      if (next === "inbox") setProjectsFocusToken((t) => t + 1)
       return next
     })
   }
 
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId)
-    setIsTasksOpen(true)
-    if (isDesktop) setTasksFocusToken((token) => token + 1)
-  }
-
-  // Theme State: 'light' (Editorial Alabaster) vs 'dark' (Obsidian Smoked Glass)
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    try {
-      const saved = localStorage.getItem('pa_planner_theme')
-      if (saved === 'dark' || saved === 'light') return saved
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-    } catch {
-      return 'light'
-    }
-  })
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(nextTheme)
-    try {
-      localStorage.setItem('pa_planner_theme', nextTheme)
-    } catch {
-      // ignore
+    const firstTask = planner.document.tasks.find(
+      (t) => t.projectId === projectId && !t.parentTaskId,
+    )
+    if (firstTask) {
+      setSelectedTaskId(firstTask.id)
     }
   }
 
-  // AI Modal States
-  const [activeAiTask, setActiveAiTask] = useState<Task | null>(null)
-  const [activeInterpretation, setActiveInterpretation] = useState<TaskInterpretationResult | null>(null)
-  const [showAiSettings, setShowAiSettings] = useState(false)
+  const handleSelectTask = (taskId: string) => {
+    setSelectedTaskId(taskId)
+    setIsTaskInspectorOpen(true)
+  }
+
+  const selectedTask = useMemo(() => {
+    if (!selectedTaskId) return undefined
+    return planner.document.tasks.find((t) => t.id === selectedTaskId)
+  }, [planner.document.tasks, selectedTaskId])
 
   const selectedProject =
     planner.document.projects.find((project) => project.id === selectedProjectId) ??
     planner.document.projects[0]
   const activeSelectedProjectId = selectedProject?.id ?? null
-  const selectedTasks = selectedProject
-    ? planner.document.tasks.filter((task) => task.projectId === selectedProject.id)
-    : []
-
-  const createProject = (title: string): boolean => {
-    const project = planner.createProject(title)
-    if (!project) {
-      return false
-    }
-    setSelectedProjectId(project.id)
-    setIsTasksOpen(true)
-    if (isDesktop) setTasksFocusToken((token) => token + 1)
-    return true
-  }
-
-  const exportBackup = () => {
-    const backup = planner.exportBackup()
-    if (!backup) {
-      return
-    }
-    const url = URL.createObjectURL(new Blob([backup], { type: 'application/json' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'pa-planner-backup.json'
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const importBackup = (file: File) => {
-    void file.text().then((raw) => {
-      planner.restore(raw)
-    })
-  }
 
   const handleTriggerAi = async (task: Task) => {
     const result = await planner.interpretTask(task.id)
@@ -188,40 +184,105 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     return map
   }, [planner.document.tasks])
 
+  const exportBackup = () => {
+    const backup = planner.exportBackup()
+    if (!backup) return
+    const url = URL.createObjectURL(new Blob([backup], { type: "application/json" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "planner-backup.json"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importBackup = (file: File) => {
+    void file.text().then((raw) => {
+      planner.restore(raw)
+    })
+  }
+
+  // Active date range text for top bar
+  const activeReferenceDate = new Date(referenceDate)
+  activeReferenceDate.setDate(activeReferenceDate.getDate() + weekOffset)
+  const currentWeek = getWeek(activeReferenceDate)
+
+  const dateHeadingText =
+    viewMode === "today"
+      ? new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          weekday: "short",
+        }).format(activeReferenceDate)
+      : `${new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric" }).format(currentWeek[0]).toUpperCase()} – ${new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "long" }).format(currentWeek[6]).toUpperCase()}`
+
   const providerLabel =
-    planner.providerMode === 'simulated-ai'
-      ? '✨ AI: Preview Mode'
-      : planner.providerMode === 'gemini-api'
-        ? '🤖 AI: Live Gemini'
-        : '⚡ AI: Local Rules'
+    planner.providerMode === "simulated-ai"
+      ? "✨ AI: Preview"
+      : planner.providerMode === "gemini-api"
+        ? "🤖 AI: Live"
+        : "⚡ AI: Local"
+
+  const showLeftDrawer = leftDrawerMode !== null
+  const showRightDrawer = isTaskInspectorOpen && Boolean(selectedTask)
 
   return (
     <div className="app-shell" data-theme={theme}>
-      <header className="app-header">
-        <div className="app-header__identity">
-          <div className="brand-lockup">
-            <span className="brand-logo" aria-hidden="true">
-              <svg width="24" height="24" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 8C2 8 8 2 13 8C18 14 24 18 24 18" stroke="var(--brand-primary)" strokeWidth="2.2" strokeLinecap="round" />
-                <path d="M2 18C2 18 8 24 13 18C18 12 24 8 24 8" stroke="var(--sage-primary)" strokeWidth="2.2" strokeLinecap="round" />
-                <circle cx="13" cy="13" r="2" fill="var(--brand-accent)" />
-              </svg>
-            </span>
-            <div className="brand-text">
-              <span className="brand">PA Planner</span>
-              <span className="brand-tag">Local Command Centre</span>
-            </div>
+      {/* Floating Top Navigation Bar */}
+      <header className="floating-top-bar">
+        <div className="top-bar__left">
+          <div className="brand-minimal-icon" title="Command Centre">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M18.178 8c5.096 0 5.096 8 0 8-3.058 0-4.077-2.667-6.178-5.333C9.899 8 8.88 5.333 5.822 5.333c-5.096 0-5.096 8 0 8 3.058 0 4.077-2.667 6.178-5.333"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+              />
+            </svg>
           </div>
+
+          <div className="top-bar__date-switcher">
+            <button
+              aria-label={viewMode === "today" ? "Previous day" : "Previous week"}
+              className="date-nav-btn"
+              onClick={() => setWeekOffset((w) => w - (viewMode === "today" ? 1 : 7))}
+              type="button"
+            >
+              ‹
+            </button>
+            <span className="top-bar__date-label">{dateHeadingText}</span>
+            <button
+              aria-label={viewMode === "today" ? "Next day" : "Next week"}
+              className="date-nav-btn"
+              onClick={() => setWeekOffset((w) => w + (viewMode === "today" ? 1 : 7))}
+              type="button"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+
+        <div className="top-bar__center">
+          <QuickCaptureBar
+            inputRef={quickCaptureInputRef}
+            onCreateQuickTask={planner.createQuickTask}
+            projects={planner.document.projects}
+            selectedProjectId={activeSelectedProjectId}
+          />
+        </div>
+
+        <div className="top-bar__right">
           <span
             aria-live="polite"
             className={`save-status save-status--${planner.notice.tone}`}
             role="status"
           >
             <span aria-hidden="true" className="save-status__icon">
-              {planner.notice.tone === 'success' ? '✓' : '!'}
+              {planner.notice.tone === "success" ? "✓" : "!"}
             </span>
             {planner.notice.message}
           </span>
+
           {planner.canUndo ? (
             <button
               className="button button--secondary button--small"
@@ -231,100 +292,128 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
               ↶ Undo Plan
             </button>
           ) : null}
+
+          {planner.document.policy ? (
+            <select
+              aria-label="Planning Mode"
+              className="top-bar-policy-dropdown"
+              onChange={(e) =>
+                planner.updatePolicy({
+                  ...planner.document.policy,
+                  preset: e.target.value as PolicyPreset,
+                })
+              }
+              value={planner.document.policy.preset}
+            >
+              <option value="balanced">Mode: Balanced</option>
+              <option value="focus">Mode: Focus</option>
+              <option value="deadline">Mode: Deadline</option>
+            </select>
+          ) : null}
+
+          {planner.hasOverdueSessions ? (
+            <button
+              className="button button--warning button--small"
+              onClick={planner.repairAndReschedule}
+              title="Repair overdue sessions"
+              type="button"
+            >
+              ⚠️ Repair
+            </button>
+          ) : null}
+
+          <button
+            className="button button--primary button--small top-bar-auto-plan-btn"
+            onClick={() => planner.generateAndApplyPlan()}
+            type="button"
+          >
+            Auto-Plan Week
+          </button>
+
+          <button
+            aria-label="Manage schedules"
+            className="top-bar-icon-pill"
+            onClick={() => setShowScheduleModal(true)}
+            title="Schedules (🗓)"
+            type="button"
+          >
+            🗓
+          </button>
+
+          <button
+            aria-label="Recurring task engine"
+            className="top-bar-icon-pill"
+            onClick={() => setShowRecurringModal(true)}
+            title="Recurring Tasks (🔁)"
+            type="button"
+          >
+            🔁
+          </button>
+
+          <button
+            className="top-bar-today-pill"
+            onClick={() => {
+              setWeekOffset(0)
+              setViewMode("week")
+            }}
+            type="button"
+          >
+            Today
+          </button>
+
           <button
             className="button button--secondary button--small ai-mode-badge-btn"
             onClick={() => setShowAiSettings(true)}
-            title="Configure AI Providers and API keys"
+            title="AI Configuration"
             type="button"
           >
             {providerLabel}
           </button>
-        </div>
 
-        <QuickCaptureBar
-          onCreateQuickTask={planner.createQuickTask}
-          projects={planner.document.projects}
-          selectedProjectId={activeSelectedProjectId}
-        />
-
-        <div className="backup-actions">
-          <button
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            className="theme-toggle-btn"
-            onClick={toggleTheme}
-            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            type="button"
-          >
-            {theme === 'light' ? '🌙' : '☀️'}
-          </button>
-          <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
+          <BackupControls className="top-bar-backup-actions" compact onExport={exportBackup} onImport={importBackup} />
         </div>
       </header>
 
+      {/* Main Multi-Column Spatial Layout */}
       <main
         className={[
-          'planner-shell',
-          isDesktop && isProjectsOpen ? 'has-projects-open' : '',
-          isDesktop && isTasksOpen ? 'has-tasks-open' : '',
+          "spatial-main-shell",
+          isDesktop && showLeftDrawer ? "has-left-drawer-open" : "",
+          isDesktop && showRightDrawer ? "has-right-drawer-open" : "",
         ]
           .filter(Boolean)
-          .join(' ')}
+          .join(" ")}
       >
-        <nav aria-label="Panel navigation" className="app-rail">
-          <button
-            aria-label="Toggle Projects panel"
-            aria-pressed={isProjectsOpen}
-            className={`app-rail__btn${isProjectsOpen ? ' is-active' : ''}`}
-            onClick={toggleProjectsPanel}
-            title="Projects"
-            type="button"
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.7"
-              />
-            </svg>
-          </button>
-          <button
-            aria-label="Toggle Tasks panel"
-            aria-pressed={isTasksOpen}
-            className={`app-rail__btn${isTasksOpen ? ' is-active' : ''}`}
-            onClick={toggleTasksPanel}
-            title="Tasks"
-            type="button"
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 12h4l2 3h4l2-3h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
-              <path
-                d="M4 12V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v6"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.7"
-              />
-              <path
-                d="M4 12v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.7"
-              />
-            </svg>
-          </button>
-        </nav>
+        <NavDock
+          activeDrawer={leftDrawerMode}
+          onFocusQuickCapture={() => quickCaptureInputRef.current?.focus()}
+          onToggleInbox={toggleInboxDrawer}
+          onToggleProjects={toggleProjectsDrawer}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+        />
 
         <ProjectPanel
+          dependencies={planner.document.dependencies}
           focusToken={projectsFocusToken}
-          hidden={!showProjectsPanel}
-          onCreateProject={createProject}
+          hidden={!showLeftDrawer}
+          mode={leftDrawerMode ?? "projects"}
+          onCloseDrawer={() => setLeftDrawerMode(null)}
+          onCreateDependency={planner.createDependency}
+          onCreateProject={planner.createProject}
+          onCreateSubtask={planner.createSubtask}
+          onCreateTask={planner.createTask}
           onSelectProject={selectProject}
+          onSelectTaskId={handleSelectTask}
+          onSetTaskCompletion={planner.setTaskCompletion}
+          onTriggerAi={handleTriggerAi}
+          onUpdateTask={planner.updateTaskConstraints}
           projects={planner.document.projects}
           selectedProjectId={activeSelectedProjectId}
+          selectedTaskId={selectedTaskId}
           taskCountByProject={taskCountByProject}
+          tasks={planner.document.tasks}
+          taskSessions={planner.document.taskSessions}
         />
 
         <CalendarPreview
@@ -338,6 +427,9 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           onDeleteTaskSession={planner.deleteTaskSession}
           onRepairSchedule={planner.repairAndReschedule}
           onScheduleTaskSession={planner.createTaskSession}
+          onSelectTaskId={handleSelectTask}
+          onSetViewMode={setViewMode}
+          onSetWeekOffset={setWeekOffset}
           onToggleSessionLock={planner.toggleSessionLock}
           onUpdatePolicy={planner.updatePolicy}
           policy={planner.document.policy}
@@ -346,26 +438,26 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           selectedTaskId={selectedTaskId}
           taskSessions={planner.document.taskSessions}
           tasks={planner.document.tasks}
+          viewMode={viewMode}
+          weekOffset={weekOffset}
         />
 
         <TaskPanel
-          focusToken={tasksFocusToken}
+          allTasks={planner.document.tasks}
           dependencies={planner.document.dependencies}
-          hidden={!showTasksPanel}
+          hidden={!showRightDrawer}
+          onClose={() => setIsTaskInspectorOpen(false)}
           onCreateDependency={planner.createDependency}
           onCreateSubtask={planner.createSubtask}
-          onCreateTask={planner.createTask}
           onDeleteDependency={planner.deleteDependency}
-          onExport={exportBackup}
-          onImport={importBackup}
-          onSelectTaskId={setSelectedTaskId}
+          onDeleteTask={planner.deleteTask}
+          onMoveTask={planner.moveTask}
           onSetTaskCompletion={planner.setTaskCompletion}
           onTriggerAi={handleTriggerAi}
-          onUpdateTaskConstraints={planner.updateTaskConstraints}
-          project={selectedProject}
-          selectedTaskId={selectedTaskId}
-          taskSessions={planner.document.taskSessions}
-          tasks={selectedTasks}
+          onUpdateTask={planner.updateTaskConstraints}
+          projects={planner.document.projects}
+          schedules={planner.document.schedules ?? []}
+          task={selectedTask}
         />
       </main>
 
@@ -413,6 +505,40 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           }}
         />
       ) : null}
+
+      {/* Schedules Modal */}
+      {showScheduleModal ? (
+        <ScheduleModal
+          onClose={() => setShowScheduleModal(false)}
+          onCreateSchedule={planner.createSchedule}
+          onDeleteSchedule={planner.deleteSchedule}
+          onUpdateSchedule={planner.updateSchedule}
+          schedules={planner.document.schedules ?? []}
+        />
+      ) : null}
+
+      {/* Recurring Modal */}
+      {showRecurringModal ? (
+        <RecurringModal
+          onClose={() => setShowRecurringModal(false)}
+          onTriggerRecurrence={planner.triggerRecurrenceGeneration}
+          tasks={planner.document.tasks}
+        />
+      ) : null}
     </div>
   )
+}
+
+const getWeek = (date: Date): Date[] => {
+  const current = new Date(date)
+  current.setUTCHours(0, 0, 0, 0)
+  const day = current.getUTCDay()
+  const diff = current.getUTCDate() - day + (day === 0 ? -6 : 1)
+  const monday = new Date(current.setUTCDate(diff))
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const next = new Date(monday)
+    next.setUTCDate(monday.getUTCDate() + index)
+    return next
+  })
 }

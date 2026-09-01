@@ -29,7 +29,7 @@ export class LocalPlannerRepository {
     } catch {
       return failure({
         code: 'storage-read-failed',
-        message: 'PA Planner could not read local storage in this browser.',
+        message: 'Planner could not read local storage in this browser.',
       })
     }
 
@@ -57,7 +57,7 @@ export class LocalPlannerRepository {
     } catch {
       return failure({
         code: 'storage-write-failed',
-        message: 'PA Planner could not save to local storage in this browser.',
+        message: 'Planner could not save to local storage in this browser.',
       })
     }
     return success(undefined)

@@ -1,230 +1,353 @@
-import type { FormEvent } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { BackupControls } from './backup-controls'
-import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
+import { useEffect, useMemo, useState } from "react"
+import type { FormEvent } from "react"
+import type {
+  DeadlineStrictness,
+  Dependency,
+  Priority,
+  Project,
+  Schedule,
+  Task,
+} from "../../domain/model"
 
 interface TaskPanelProps {
-  focusToken: number
   hidden: boolean
-  onCreateTask: (projectId: string, title: string) => boolean
-  onCreateSubtask?: (projectId: string, parentTaskId: string, title: string) => boolean
-  onUpdateTaskConstraints?: (
+  task: Task | undefined
+  projects: Project[]
+  schedules: Schedule[]
+  dependencies: Dependency[]
+  allTasks: Task[]
+  onClose: () => void
+  onUpdateTask: (
     taskId: string,
-    constraints: { estimateMinutes?: number; dueAt?: string; earliestStartAt?: string },
+    updates: {
+      title?: string
+      estimateMinutes?: number
+      dueAt?: string
+      earliestStartAt?: string
+      priority?: Priority
+      deadlineStrictness?: DeadlineStrictness
+      scheduleId?: string
+      notes?: string
+    },
   ) => boolean
+  onSetTaskCompletion: (taskId: string, completed: boolean) => void
+  onCreateSubtask: (projectId: string, parentTaskId: string, title: string) => boolean
+  onDeleteTask: (taskId: string) => boolean
+  onMoveTask: (taskId: string, targetProjectId: string) => boolean
+  onTriggerAi?: (task: Task) => void
   onCreateDependency?: (fromTaskId: string, toTaskId: string) => boolean
   onDeleteDependency?: (dependencyId: string) => boolean
-  onExport: () => void
-  onImport: (file: File) => void
-  onSelectTaskId?: (taskId: string) => void
-  onSetTaskCompletion: (taskId: string, completed: boolean) => void
-  onTriggerAi?: (task: Task) => void
-  project: Project | undefined
-  selectedTaskId?: string | null
-  taskSessions?: TaskSession[]
-  dependencies?: Dependency[]
-  tasks: Task[]
 }
 
 export const TaskPanel = ({
-  focusToken,
   hidden,
-  onCreateTask,
+  task,
+  projects,
+  schedules,
+  dependencies,
+  allTasks,
+  onClose,
+  onUpdateTask,
+  onSetTaskCompletion,
   onCreateSubtask,
-  onUpdateTaskConstraints,
+  onDeleteTask,
+  onMoveTask,
+  onTriggerAi,
   onCreateDependency,
   onDeleteDependency,
-  onExport,
-  onImport,
-  onSelectTaskId,
-  onSetTaskCompletion,
-  onTriggerAi,
-  project,
-  selectedTaskId,
-  taskSessions = [],
-  dependencies = [],
-  tasks,
 }: TaskPanelProps) => {
-  const [title, setTitle] = useState('')
-  const [activeSubtaskParentId, setActiveSubtaskParentId] = useState<string | null>(null)
-  const [subtaskTitle, setSubtaskTitle] = useState('')
-  const headingRef = useRef<HTMLHeadingElement>(null)
+  // Buffered draft state for Title and Notes
+  const [draftTitle, setDraftTitle] = useState(task?.title ?? "")
+  const [draftNotes, setDraftNotes] = useState(task?.notes ?? "")
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("")
+  const [isAddingSubtask, setIsAddingSubtask] = useState(false)
+  const [selectedPrereqId, setSelectedPrereqId] = useState("")
+  const [isEditingConstraints, setIsEditingConstraints] = useState(false)
+  const [editMinutes, setEditMinutes] = useState(task?.estimateMinutes ? String(task.estimateMinutes) : "")
+  const [editDueAt, setEditDueAt] = useState(task?.dueAt ? task.dueAt.slice(0, 10) : "")
 
-  // The panel stays mounted at all times (so a closed draft isn't lost).
-  // `focusToken` only increments at the moment of a real desktop-open
-  // action (see planner-app.tsx), so it never fires from a resize or from
-  // the always-on mobile layout the way a derived `isDesktop && isOpen`
-  // boolean would.
+  // Sync draft states when selected task changes
   useEffect(() => {
-    if (focusToken > 0) {
-      headingRef.current?.focus()
+    if (task) {
+      setDraftTitle(task.title)
+      setDraftNotes(task.notes ?? "")
+      setEditMinutes(task.estimateMinutes ? String(task.estimateMinutes) : "")
+      setEditDueAt(task.dueAt ? task.dueAt.slice(0, 10) : "")
+      setIsAddingSubtask(false)
+      setIsEditingConstraints(false)
     }
-  }, [focusToken])
+  }, [task?.id])
 
-  // Constraint editing state
-  const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
-  const [editMinutes, setEditMinutes] = useState<string>('')
-  const [editDueAt, setEditDueAt] = useState<string>('')
-  const [selectedPrereqId, setSelectedPrereqId] = useState<string>('')
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (project && onCreateTask(project.id, title)) {
-      setTitle('')
+  const commitTitle = () => {
+    if (task && draftTitle.trim() && draftTitle.trim() !== task.title) {
+      onUpdateTask(task.id, { title: draftTitle.trim() })
     }
   }
 
-  const submitSubtask = (event: FormEvent<HTMLFormElement>, parentId: string) => {
-    event.preventDefault()
-    if (project && onCreateSubtask && onCreateSubtask(project.id, parentId, subtaskTitle)) {
-      setSubtaskTitle('')
-      setActiveSubtaskParentId(null)
+  const commitNotes = () => {
+    if (task && draftNotes !== (task.notes ?? "")) {
+      onUpdateTask(task.id, { notes: draftNotes })
     }
   }
 
-  const openConstraintEditor = (task: Task) => {
-    setEditingConstraintTaskId(task.id)
-    setEditMinutes(task.estimateMinutes ? String(task.estimateMinutes) : '')
-    setEditDueAt(task.dueAt ? task.dueAt.slice(0, 10) : '')
-    setSelectedPrereqId('')
+  const handleSubtaskSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!task || !newSubtaskTitle.trim()) return
+    if (onCreateSubtask(task.projectId, task.id, newSubtaskTitle.trim())) {
+      setNewSubtaskTitle("")
+      setIsAddingSubtask(false)
+    }
   }
 
-  const submitConstraints = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!editingConstraintTaskId) return
+  const handleConstraintsSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!task) return
+    const parsedMinutes = editMinutes.trim() ? parseInt(editMinutes, 10) : undefined
+    const parsedDue = editDueAt.trim() ? `${editDueAt.trim()}T23:59:59.000Z` : undefined
 
-    if (onUpdateTaskConstraints) {
-      const parsedMinutes = editMinutes.trim() ? parseInt(editMinutes, 10) : undefined
-      const parsedDueAt = editDueAt.trim()
-        ? new Date(`${editDueAt.trim()}T23:59:59.000Z`).toISOString()
-        : undefined
-
-      onUpdateTaskConstraints(editingConstraintTaskId, {
-        estimateMinutes: parsedMinutes,
-        dueAt: parsedDueAt,
-      })
-    }
+    onUpdateTask(task.id, {
+      estimateMinutes: parsedMinutes,
+      dueAt: parsedDue,
+    })
 
     if (selectedPrereqId && onCreateDependency) {
-      onCreateDependency(selectedPrereqId, editingConstraintTaskId)
+      onCreateDependency(selectedPrereqId, task.id)
+      setSelectedPrereqId("")
     }
 
-    setEditingConstraintTaskId(null)
+    setIsEditingConstraints(false)
   }
 
-  const sessionCountByTask = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const session of taskSessions) {
-      map.set(session.taskId, (map.get(session.taskId) ?? 0) + 1)
-    }
-    return map
-  }, [taskSessions])
+  const subtasks = useMemo(() => {
+    if (!task) return []
+    return allTasks.filter((t) => t.parentTaskId === task.id)
+  }, [allTasks, task?.id])
 
-  const taskMap = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  const project = useMemo(() => {
+    if (!task) return undefined
+    return projects.find((p) => p.id === task.projectId)
+  }, [projects, task?.projectId])
 
-  const prerequisitesByTaskId = useMemo(() => {
-    const map = new Map<string, { dependencyId: string; fromTask: Task }[]>()
-    for (const dep of dependencies) {
-      const from = taskMap.get(dep.fromTaskId)
-      if (from) {
-        const list = map.get(dep.toTaskId) ?? []
-        list.push({ dependencyId: dep.id, fromTask: from })
-        map.set(dep.toTaskId, list)
-      }
-    }
-    return map
-  }, [dependencies, taskMap])
+  const schedule = useMemo(() => {
+    if (!task) return undefined
+    return schedules.find((s) => s.id === task.scheduleId) ?? schedules.find((s) => s.isDefault)
+  }, [schedules, task?.scheduleId])
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'scheduled' | 'due-soon' | 'completed'>('all')
+  const prereqs = useMemo(() => {
+    if (!task) return []
+    return dependencies
+      .filter((d) => d.toTaskId === task.id)
+      .map((d) => ({
+        dependencyId: d.id,
+        fromTask: allTasks.find((t) => t.id === d.fromTaskId),
+      }))
+      .filter((item) => item.fromTask !== undefined)
+  }, [allTasks, dependencies, task?.id])
 
-  const filteredTopLevelTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (t.parentTaskId) return false
+  const availablePrereqs = useMemo(() => {
+    if (!task) return []
+    const existing = new Set(dependencies.filter((d) => d.toTaskId === task.id).map((d) => d.fromTaskId))
+    return allTasks.filter((t) => t.id !== task.id && !existing.has(t.id) && !t.parentTaskId)
+  }, [allTasks, dependencies, task?.id])
 
-      if (searchQuery.trim()) {
-        const matchesQuery = t.title.toLowerCase().includes(searchQuery.toLowerCase().trim())
-        if (!matchesQuery) return false
-      }
+  const isDeadlineRisk = Boolean(
+    task &&
+      task.deadlineStrictness === "hard" &&
+      task.dueAt &&
+      !task.completed,
+  )
 
-      const sessionCount = sessionCountByTask.get(t.id) ?? 0
-      switch (filterStatus) {
-        case 'active':
-          return !t.completed
-        case 'completed':
-          return t.completed
-        case 'scheduled':
-          return sessionCount > 0
-        case 'due-soon':
-          return Boolean(t.dueAt) && !t.completed
-        case 'all':
-        default:
-          return true
-      }
-    })
-  }, [filterStatus, searchQuery, sessionCountByTask, tasks])
+  if (hidden || !task) {
+    return <aside aria-label="Task Inspector" className="task-panel" hidden={true} />
+  }
 
-  const subtasksByParent = useMemo(() => {
-    const map = new Map<string, Task[]>()
-    for (const task of tasks) {
-      if (task.parentTaskId) {
-        const list = map.get(task.parentTaskId) ?? []
-        list.push(task)
-        map.set(task.parentTaskId, list)
-      }
-    }
-    return map
-  }, [tasks])
+  return (
+    <aside aria-label="Task Inspector" className="task-panel">
+      <div className="task-panel__header">
+        <div className="task-panel__badge-row">
+          {isDeadlineRisk ? (
+            <span className="deadline-risk-badge">DEADLINE RISK</span>
+          ) : (
+            <span className="task-details-badge">TASK DETAILS</span>
+          )}
+        </div>
+        <button
+          aria-label="Close task inspector"
+          className="modal-close-btn"
+          onClick={onClose}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
 
-  const renderTaskItem = (task: Task, isSubtask = false) => {
-    const sessionCount = sessionCountByTask.get(task.id) ?? 0
-    const isSelected = selectedTaskId === task.id
-    const childSubtasks = subtasksByParent.get(task.id) ?? []
-    const prereqs = prerequisitesByTaskId.get(task.id) ?? []
+      <div className="task-inspector-body">
+        <div className="task-title-wrapper">
+          <input
+            aria-label="Task title"
+            className="task-title-input"
+            onBlur={commitTitle}
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commitTitle()
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Task title"
+            value={draftTitle}
+          />
+        </div>
 
-    return (
-      <li key={task.id} className={isSubtask ? 'subtask-item' : 'task-item'}>
-        <div className={`task-card ${isSelected ? 'is-selected' : ''}`}>
-          <div className="task-card__main">
-            <label className={task.completed ? 'task-row is-completed' : 'task-row'}>
-              <input
-                checked={task.completed}
-                onChange={(event) => onSetTaskCompletion(task.id, event.target.checked)}
-                type="checkbox"
-              />
+        <div className="task-metadata-chips" role="group" aria-label="Task properties">
+          {project ? (
+            <span className="meta-chip meta-chip--project">
               <span
-                className="task-title"
-                onClick={() => onSelectTaskId?.(task.id)}
-                style={{ cursor: 'pointer' }}
-              >
-                {task.title}
-              </span>
-              <span className="visually-hidden">
-                {task.completed ? 'Completed' : 'Open'} {isSubtask ? 'subtask' : 'task'}
-              </span>
-            </label>
+                aria-hidden="true"
+                className="meta-chip__dot"
+                style={{ backgroundColor: project.color ?? "#e0533c" }}
+              />
+              {project.title}
+            </span>
+          ) : null}
 
-            <div className="task-card__meta">
-              {task.estimateMinutes ? (
-                <span className="task-constraint-badge" title="Estimated duration">
-                  ⏱ {task.estimateMinutes}m
-                </span>
-              ) : null}
+          <button
+            className="meta-chip meta-chip--editable"
+            onClick={() => setIsEditingConstraints(true)}
+            title="Edit duration and deadline"
+            type="button"
+          >
+            ⏱ {task.estimateMinutes ? `${task.estimateMinutes}m` : "Add duration"}
+            {task.dueAt ? ` · ${new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric" }).format(new Date(task.dueAt))}` : ""}
+          </button>
 
-              {task.dueAt ? (
-                <span className="task-constraint-badge" title="Deadline">
-                  📅 {new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(task.dueAt))}
-                </span>
-              ) : null}
+          <select
+            aria-label="Priority"
+            className={`meta-chip-select meta-chip-select--${task.priority ?? "medium"}`}
+            onChange={(e) => onUpdateTask(task.id, { priority: e.target.value as Priority })}
+            value={task.priority ?? "medium"}
+          >
+            <option value="asap">🔥 ASAP</option>
+            <option value="high">⚡ High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
 
-              {prereqs.map((prereq) => (
-                <span className="task-constraint-badge" key={prereq.dependencyId} title="Prerequisite task">
-                  🔗 After: {prereq.fromTask.title}
+          <select
+            aria-label="Deadline Strictness"
+            className="meta-chip-select"
+            onChange={(e) =>
+              onUpdateTask(task.id, { deadlineStrictness: e.target.value as DeadlineStrictness })
+            }
+            value={task.deadlineStrictness ?? "soft"}
+          >
+            <option value="soft">Soft Target</option>
+            <option value="hard">Hard Deadline</option>
+          </select>
+
+          {schedule ? (
+            <span className="meta-chip meta-chip--schedule">
+              🗓 {schedule.name}
+            </span>
+          ) : null}
+
+          {onTriggerAi ? (
+            <button
+              aria-label={`AI assistance for ${task.title}`}
+              className="meta-chip meta-chip--ai"
+              onClick={() => onTriggerAi(task)}
+              type="button"
+            >
+              ✨ AI Assist
+            </button>
+          ) : null}
+        </div>
+
+        {/* Subtasks Checklist */}
+        <div className="inspector-section">
+          <h3 className="inspector-section__title">SUBTASKS</h3>
+          <ul className="inspector-subtask-list">
+            {subtasks.map((subtask) => (
+              <li key={subtask.id} className="inspector-subtask-item">
+                <label className="custom-checkbox-label">
+                  <input
+                    checked={subtask.completed}
+                    className="custom-checkbox-input"
+                    onChange={(e) => onSetTaskCompletion(subtask.id, e.target.checked)}
+                    type="checkbox"
+                  />
+                  <span className="custom-checkbox-box" aria-hidden="true">
+                    <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+                      <path
+                        d="M1.5 5L4.5 8L10.5 2"
+                        stroke="white"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
+                  <span
+                    className={
+                      subtask.completed
+                        ? "custom-checkbox-text is-completed"
+                        : "custom-checkbox-text"
+                    }
+                  >
+                    {subtask.title}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+
+          {isAddingSubtask ? (
+            <form className="inline-subtask-form" onSubmit={handleSubtaskSubmit}>
+              <input
+                aria-label="New subtask title"
+                autoFocus
+                className="inline-subtask-input"
+                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                placeholder="Enter subtask name..."
+                value={newSubtaskTitle}
+              />
+              <div className="inline-subtask-actions">
+                <button
+                  className="text-button"
+                  onClick={() => setIsAddingSubtask(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button className="button button--primary button--small" type="submit">
+                  Add
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              className="add-subtask-dashed-btn"
+              onClick={() => setIsAddingSubtask(true)}
+              type="button"
+            >
+              + Add subtask
+            </button>
+          )}
+        </div>
+
+        {/* Prerequisites & Dependencies */}
+        {prereqs.length > 0 ? (
+          <div className="inspector-section">
+            <h3 className="inspector-section__title">PREREQUISITES</h3>
+            <div className="prereq-list">
+              {prereqs.map((p) => (
+                <span className="meta-chip meta-chip--prereq" key={p.dependencyId}>
+                  🔗 After: {p.fromTask?.title}
                   {onDeleteDependency ? (
                     <button
-                      aria-label={`Remove dependency on ${prereq.fromTask.title}`}
+                      aria-label={`Remove dependency on ${p.fromTask?.title}`}
                       className="task-dep-remove"
-                      onClick={() => onDeleteDependency(prereq.dependencyId)}
+                      onClick={() => onDeleteDependency(p.dependencyId)}
                       type="button"
                     >
                       ×
@@ -232,214 +355,72 @@ export const TaskPanel = ({
                   ) : null}
                 </span>
               ))}
-
-              {sessionCount > 0 ? (
-                <span className="task-badge" title={`${sessionCount} session(s) scheduled`}>
-                  {sessionCount} scheduled
-                </span>
-              ) : null}
-
-              {onTriggerAi && !isSubtask ? (
-                <button
-                  aria-label={`AI assistance for ${task.title}`}
-                  className="task-ai-btn"
-                  onClick={() => onTriggerAi(task)}
-                  title="AI Assist & Proposals"
-                  type="button"
-                >
-                  ✨ AI
-                </button>
-              ) : null}
-
-              <button
-                aria-label={`Edit constraints for ${task.title}`}
-                className="task-edit-btn"
-                onClick={() => openConstraintEditor(task)}
-                type="button"
-              >
-                Details
-              </button>
             </div>
           </div>
+        ) : null}
 
-          {!isSubtask ? (
-            <div className="subtasks-container">
-              {childSubtasks.length > 0 ? (
-                <ul className="subtask-list">
-                  {childSubtasks.map((subtask) => renderTaskItem(subtask, true))}
-                </ul>
-              ) : null}
+        {/* Notes */}
+        <div className="inspector-section">
+          <h3 className="inspector-section__title">NOTES</h3>
+          <textarea
+            aria-label="Task notes"
+            className="inspector-notes-textarea"
+            onBlur={commitNotes}
+            onChange={(e) => setDraftNotes(e.target.value)}
+            placeholder="Add context or a link..."
+            rows={4}
+            value={draftNotes}
+          />
+        </div>
 
-              {activeSubtaskParentId === task.id ? (
-                <form
-                  className="subtask-form"
-                  onSubmit={(e) => submitSubtask(e, task.id)}
-                >
-                  <label className="visually-hidden" htmlFor={`subtask-input-${task.id}`}>
-                    Add subtask to {task.title}
-                  </label>
-                  <input
-                    id={`subtask-input-${task.id}`}
-                    maxLength={200}
-                    onChange={(e) => setSubtaskTitle(e.target.value)}
-                    placeholder="Add a subtask"
-                    value={subtaskTitle}
-                  />
-                  <div className="subtask-form__actions">
-                    <button
-                      className="text-button"
-                      onClick={() => setActiveSubtaskParentId(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                    <button className="button button--primary button--small" type="submit">
-                      Add
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  className="add-subtask-toggle"
-                  onClick={() => {
-                    setActiveSubtaskParentId(task.id)
-                    setSubtaskTitle('')
-                  }}
-                  type="button"
-                >
-                  + Add subtask
-                </button>
-              )}
-            </div>
+        {/* Action Controls */}
+        <div className="inspector-actions-footer">
+          <button
+            className="button button--secondary button--small"
+            onClick={() => onSetTaskCompletion(task.id, !task.completed)}
+            type="button"
+          >
+            {task.completed ? "Reopen Task" : "✓ Mark Complete"}
+          </button>
+          {projects.length > 1 ? (
+            <select
+              aria-label="Move task to project"
+              className="meta-chip-select"
+              onChange={(e) => onMoveTask(task.id, e.target.value)}
+              value={task.projectId}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  📁 Move to: {p.title}
+                </option>
+              ))}
+            </select>
           ) : null}
+          <button
+            aria-label={`Delete task ${task.title}`}
+            className="button button--danger button--small"
+            onClick={() => {
+              onDeleteTask(task.id)
+              onClose()
+            }}
+            type="button"
+          >
+            Delete
+          </button>
         </div>
-      </li>
-    )
-  }
-
-  const editingTask = editingConstraintTaskId
-    ? tasks.find((t) => t.id === editingConstraintTaskId)
-    : null
-
-  const availablePrereqOptions = useMemo(() => {
-    if (!editingTask) return []
-    const existingPrereqIds = new Set(
-      dependencies.filter((d) => d.toTaskId === editingTask.id).map((d) => d.fromTaskId),
-    )
-    return tasks.filter(
-      (t) => t.id !== editingTask.id && !existingPrereqIds.has(t.id),
-    )
-  }, [dependencies, editingTask, tasks])
-
-  return (
-    <aside aria-labelledby="selected-project-heading" className="task-panel" hidden={hidden}>
-      {project ? (
-        <>
-          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
-            {project.title}
-          </h2>
-          <section aria-labelledby="tasks-heading" className="tasks-section">
-            <div className="tasks-section__header">
-              <h3 id="tasks-heading">Tasks</h3>
-              <div className="task-search-wrapper">
-                <input
-                  aria-label="Search tasks"
-                  className="task-search-input"
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter tasks..."
-                  type="search"
-                  value={searchQuery}
-                />
-              </div>
-            </div>
-
-            <div className="task-filter-chips" role="group" aria-label="Filter tasks by status">
-              <button
-                className={`task-filter-chip ${filterStatus === 'all' ? 'is-active' : ''}`}
-                onClick={() => setFilterStatus('all')}
-                type="button"
-              >
-                All
-              </button>
-              <button
-                className={`task-filter-chip ${filterStatus === 'active' ? 'is-active' : ''}`}
-                onClick={() => setFilterStatus('active')}
-                type="button"
-              >
-                Active
-              </button>
-              <button
-                className={`task-filter-chip ${filterStatus === 'scheduled' ? 'is-active' : ''}`}
-                onClick={() => setFilterStatus('scheduled')}
-                type="button"
-              >
-                Scheduled
-              </button>
-              <button
-                className={`task-filter-chip ${filterStatus === 'due-soon' ? 'is-active' : ''}`}
-                onClick={() => setFilterStatus('due-soon')}
-                type="button"
-              >
-                Due Soon
-              </button>
-              <button
-                className={`task-filter-chip ${filterStatus === 'completed' ? 'is-active' : ''}`}
-                onClick={() => setFilterStatus('completed')}
-                type="button"
-              >
-                Done
-              </button>
-            </div>
-
-            {filteredTopLevelTasks.length > 0 ? (
-              <ul className="task-list">
-                {filteredTopLevelTasks.map((task) => renderTaskItem(task, false))}
-              </ul>
-            ) : (
-              <p className="empty-tasks">
-                {searchQuery.trim() || filterStatus !== 'all'
-                  ? 'No tasks match current filter.'
-                  : 'Add the first task for this project.'}
-              </p>
-            )}
-            <form className="task-form" onSubmit={submit}>
-              <label className="visually-hidden" htmlFor="new-task-title">
-                Add a task to {project.title}
-              </label>
-              <input
-                id="new-task-title"
-                maxLength={200}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Add a task"
-                title="Type a task and press Enter to add it"
-                value={title}
-              />
-              <button className="visually-hidden" type="submit">
-                Add task
-              </button>
-            </form>
-          </section>
-        </>
-      ) : (
-        <div className="no-project-selected">
-          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
-            Start with a project
-          </h2>
-          <p>Create a project, then add its first task here.</p>
-        </div>
-      )}
+      </div>
 
       {/* Constraints Modal */}
-      {editingTask ? (
+      {isEditingConstraints ? (
         <div aria-modal="true" className="calendar-dialog-overlay" role="dialog">
           <div className="calendar-dialog">
-            <h2>Task Constraints & Dependencies</h2>
-            <p className="calendar-dialog__sub">{editingTask.title}</p>
-            <form onSubmit={submitConstraints}>
+            <h2>Task Constraints & Scheduling</h2>
+            <p className="calendar-dialog__sub">{task.title}</p>
+            <form onSubmit={handleConstraintsSubmit}>
               <div className="calendar-dialog__field">
-                <label htmlFor="constraint-duration">Estimated duration (minutes)</label>
+                <label htmlFor="inspector-constraint-duration">Estimated duration (minutes)</label>
                 <input
-                  id="constraint-duration"
+                  id="inspector-constraint-duration"
                   max={1440}
                   min={1}
                   onChange={(e) => setEditMinutes(e.target.value)}
@@ -450,25 +431,25 @@ export const TaskPanel = ({
               </div>
 
               <div className="calendar-dialog__field">
-                <label htmlFor="constraint-due">Deadline / Due date</label>
+                <label htmlFor="inspector-constraint-due">Deadline / Due date</label>
                 <input
-                  id="constraint-due"
+                  id="inspector-constraint-due"
                   onChange={(e) => setEditDueAt(e.target.value)}
                   type="date"
                   value={editDueAt}
                 />
               </div>
 
-              {availablePrereqOptions.length > 0 ? (
+              {availablePrereqs.length > 0 ? (
                 <div className="calendar-dialog__field">
-                  <label htmlFor="constraint-prereq">Depends on prerequisite task</label>
+                  <label htmlFor="inspector-constraint-prereq">Depends on prerequisite task</label>
                   <select
-                    id="constraint-prereq"
+                    id="inspector-constraint-prereq"
                     onChange={(e) => setSelectedPrereqId(e.target.value)}
                     value={selectedPrereqId}
                   >
                     <option value="">None / No additional prerequisite</option>
-                    {availablePrereqOptions.map((opt) => (
+                    {availablePrereqs.map((opt) => (
                       <option key={opt.id} value={opt.id}>
                         {opt.title}
                       </option>
@@ -480,7 +461,7 @@ export const TaskPanel = ({
               <div className="calendar-dialog__actions">
                 <button
                   className="text-button"
-                  onClick={() => setEditingConstraintTaskId(null)}
+                  onClick={() => setIsEditingConstraints(false)}
                   type="button"
                 >
                   Cancel
@@ -493,8 +474,6 @@ export const TaskPanel = ({
           </div>
         </div>
       ) : null}
-
-      <BackupControls className="mobile-backup-actions" compact onExport={onExport} onImport={onImport} />
     </aside>
   )
 }

@@ -1,20 +1,24 @@
-import { failure, success } from './result'
+import { failure, success } from "./result"
 import type {
   AvailabilityWindow,
+  DeadlineStrictness,
   Dependency,
   FixedEvent,
   PlannerDocument,
   PlanningPolicy,
   PolicyPreset,
+  Priority,
   Project,
   ProposalDecision,
+  RecurrenceRule,
   Revision,
   RevisionKind,
+  Schedule,
   Task,
   TaskSession,
-} from './model'
-import type { Result } from './result'
-import { hasDependencyCycle } from './dependency-graph'
+} from "./model"
+import type { Result } from "./result"
+import { hasDependencyCycle } from "./dependency-graph"
 
 const maximumTitleLength = 200
 const maximumReasonLength = 300
@@ -28,99 +32,169 @@ interface CommandMetadata {
 
 export type PlannerCommand =
   | (CommandMetadata & {
-      type: 'create-project'
+      type: "create-project"
       title: string
+      color?: string
     })
   | (CommandMetadata & {
-      type: 'create-task'
+      type: "delete-project"
+      projectId: string
+    })
+  | (CommandMetadata & {
+      type: "create-task"
       projectId: string
       title: string
+      priority?: Priority
+      deadlineStrictness?: DeadlineStrictness
+      scheduleId?: string
+      estimateMinutes?: number
+      dueAt?: string
+      earliestStartAt?: string
+      notes?: string
     })
   | (CommandMetadata & {
-      type: 'create-subtask'
+      type: "delete-task"
+      taskId: string
+    })
+  | (CommandMetadata & {
+      type: "move-task"
+      taskId: string
+      targetProjectId: string
+    })
+  | (CommandMetadata & {
+      type: "create-subtask"
       projectId: string
       parentTaskId: string
       title: string
     })
   | (CommandMetadata & {
-      type: 'update-task-constraints'
+      type: "update-task-constraints"
       taskId: string
+      title?: string
       estimateMinutes?: number
       dueAt?: string
       earliestStartAt?: string
+      priority?: Priority
+      deadlineStrictness?: DeadlineStrictness
+      scheduleId?: string
+      notes?: string
     })
   | (CommandMetadata & {
-      type: 'set-task-completion'
+      type: "set-task-completion"
       taskId: string
       completed: boolean
     })
   | (CommandMetadata & {
-      type: 'create-fixed-event'
+      type: "set-task-priority"
+      taskId: string
+      priority: Priority
+    })
+  | (CommandMetadata & {
+      type: "set-task-strictness"
+      taskId: string
+      deadlineStrictness: DeadlineStrictness
+    })
+  | (CommandMetadata & {
+      type: "set-task-schedule"
+      taskId: string
+      scheduleId?: string
+    })
+  | (CommandMetadata & {
+      type: "set-task-notes"
+      taskId: string
+      notes: string
+    })
+  | (CommandMetadata & {
+      type: "set-task-recurrence"
+      taskId: string
+      recurrence?: RecurrenceRule
+    })
+  | (CommandMetadata & {
+      type: "create-fixed-event"
       title: string
       startAt: string
       endAt: string
     })
   | (CommandMetadata & {
-      type: 'delete-fixed-event'
+      type: "delete-fixed-event"
       eventId: string
     })
   | (CommandMetadata & {
-      type: 'create-task-session'
+      type: "create-task-session"
       taskId: string
       startAt: string
       endAt: string
     })
   | (CommandMetadata & {
-      type: 'delete-task-session'
+      type: "delete-task-session"
       sessionId: string
     })
   | (CommandMetadata & {
-      type: 'toggle-task-session-lock'
+      type: "toggle-task-session-lock"
       sessionId: string
     })
   | (CommandMetadata & {
-      type: 'create-dependency'
+      type: "create-dependency"
       fromTaskId: string
       toTaskId: string
     })
   | (CommandMetadata & {
-      type: 'delete-dependency'
+      type: "delete-dependency"
       dependencyId: string
     })
   | (CommandMetadata & {
-      type: 'apply-plan'
+      type: "create-schedule"
+      name: string
+      workingWindows: AvailabilityWindow[]
+      color?: string
+    })
+  | (CommandMetadata & {
+      type: "update-schedule"
+      scheduleId: string
+      name?: string
+      workingWindows?: AvailabilityWindow[]
+      color?: string
+      isDefault?: boolean
+    })
+  | (CommandMetadata & {
+      type: "delete-schedule"
+      scheduleId: string
+    })
+  | (CommandMetadata & {
+      type: "apply-plan"
       sessions: TaskSession[]
     })
   | (CommandMetadata & {
-      type: 'undo-last-plan'
+      type: "undo-last-plan"
     })
   | (CommandMetadata & {
-      type: 'update-availability'
+      type: "update-availability"
       workingWindows: AvailabilityWindow[]
     })
   | (CommandMetadata & {
-      type: 'update-policy'
+      type: "update-policy"
       policy: PlanningPolicy
     })
   | (CommandMetadata & {
-      type: 'record-proposal-decision'
+      type: "record-proposal-decision"
       decision: ProposalDecision
     })
   | (CommandMetadata & {
-      type: 'repair-schedule'
+      type: "repair-schedule"
       sessions: TaskSession[]
     })
 
 export interface CommandFailure {
   code:
-    | 'invalid-command'
-    | 'project-not-found'
-    | 'task-not-found'
-    | 'parent-task-not-found'
-    | 'dependency-not-found'
-    | 'fixed-event-not-found'
-    | 'task-session-not-found'
-    | 'duplicate-id'
+    | "invalid-command"
+    | "project-not-found"
+    | "task-not-found"
+    | "parent-task-not-found"
+    | "dependency-not-found"
+    | "fixed-event-not-found"
+    | "task-session-not-found"
+    | "schedule-not-found"
+    | "duplicate-id"
   message: string
 }
 
@@ -142,52 +216,74 @@ export const executeCommand = (
   }
 
   switch (command.type) {
-    case 'create-project':
+    case "create-project":
       return createProject(document, command)
-    case 'create-task':
+    case "delete-project":
+      return deleteProject(document, command)
+    case "create-task":
       return createTask(document, command)
-    case 'create-subtask':
+    case "delete-task":
+      return deleteTask(document, command)
+    case "move-task":
+      return moveTask(document, command)
+    case "create-subtask":
       return createSubtask(document, command)
-    case 'update-task-constraints':
+    case "update-task-constraints":
       return updateTaskConstraints(document, command)
-    case 'set-task-completion':
+    case "set-task-completion":
       return setTaskCompletion(document, command)
-    case 'create-fixed-event':
+    case "set-task-priority":
+      return setTaskPriority(document, command)
+    case "set-task-strictness":
+      return setTaskStrictness(document, command)
+    case "set-task-schedule":
+      return setTaskSchedule(document, command)
+    case "set-task-notes":
+      return setTaskNotes(document, command)
+    case "set-task-recurrence":
+      return setTaskRecurrence(document, command)
+    case "create-fixed-event":
       return createFixedEvent(document, command)
-    case 'delete-fixed-event':
+    case "delete-fixed-event":
       return deleteFixedEvent(document, command)
-    case 'create-task-session':
+    case "create-task-session":
       return createTaskSession(document, command)
-    case 'delete-task-session':
+    case "delete-task-session":
       return deleteTaskSession(document, command)
-    case 'toggle-task-session-lock':
+    case "toggle-task-session-lock":
       return toggleTaskSessionLock(document, command)
-    case 'create-dependency':
+    case "create-dependency":
       return createDependency(document, command)
-    case 'delete-dependency':
+    case "delete-dependency":
       return deleteDependency(document, command)
-    case 'apply-plan':
+    case "create-schedule":
+      return createSchedule(document, command)
+    case "update-schedule":
+      return updateSchedule(document, command)
+    case "delete-schedule":
+      return deleteSchedule(document, command)
+    case "apply-plan":
       return applyPlan(document, command)
-    case 'undo-last-plan':
+    case "undo-last-plan":
       return undoLastPlan(document, command)
-    case 'update-availability':
+    case "update-availability":
       return updateAvailability(document, command)
-    case 'update-policy':
+    case "update-policy":
       return updatePolicy(document, command)
-    case 'record-proposal-decision':
+    case "record-proposal-decision":
       return recordProposalDecision(document, command)
-    case 'repair-schedule':
+    case "repair-schedule":
       return repairScheduleCommand(document, command)
   }
 }
 
 const createProject = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-project' }>,
+  command: Extract<PlannerCommand, { type: "create-project" }>,
 ): CommandResult => {
   const title = normaliseTitle(command.title)
   if (!title) {
-    return invalidCommand('Project names must contain between 1 and 200 characters.')
+    return invalidCommand("Project names must contain between 1 and 200 characters.")
   }
 
   if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
@@ -197,28 +293,53 @@ const createProject = (
   const project: Project = {
     id: command.id,
     title,
+    color: command.color,
     createdAt: command.occurredAt,
     updatedAt: command.occurredAt,
   }
 
-  return revised(document, command, 'project-created', `Created project “${title}”.`, {
+  return revised(document, command, "project-created", `Created project “${title}”.`, {
     projects: [...document.projects, project],
+  })
+}
+
+const deleteProject = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "delete-project" }>,
+): CommandResult => {
+  const project = document.projects.find((p) => p.id === command.projectId)
+  if (!project) {
+    return failure({ code: "project-not-found", message: "That project no longer exists." })
+  }
+
+  const projectTaskIds = new Set(
+    document.tasks.filter((t) => t.projectId === command.projectId).map((t) => t.id),
+  )
+
+  return revised(document, command, "project-deleted", `Deleted project “${project.title}”.`, {
+    projects: document.projects.filter((p) => p.id !== command.projectId),
+    tasks: document.tasks.filter((t) => t.projectId !== command.projectId),
+    dependencies: document.dependencies.filter(
+      (d) => !projectTaskIds.has(d.fromTaskId) && !projectTaskIds.has(d.toTaskId),
+    ),
+    taskSessions: document.taskSessions.filter((s) => !projectTaskIds.has(s.taskId)),
+    proposals: document.proposals.filter((pr) => !projectTaskIds.has(pr.taskId)),
   })
 }
 
 const createTask = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-task' }>,
+  command: Extract<PlannerCommand, { type: "create-task" }>,
 ): CommandResult => {
   const title = normaliseTitle(command.title)
   if (!title) {
-    return invalidCommand('Task names must contain between 1 and 200 characters.')
+    return invalidCommand("Task names must contain between 1 and 200 characters.")
   }
 
   if (!document.projects.some((project) => project.id === command.projectId)) {
     return failure({
-      code: 'project-not-found',
-      message: 'Choose an existing project before adding a task.',
+      code: "project-not-found",
+      message: "Choose an existing project before adding a task.",
     })
   }
 
@@ -231,45 +352,105 @@ const createTask = (
     projectId: command.projectId,
     title,
     completed: false,
+    priority: command.priority,
+    deadlineStrictness: command.deadlineStrictness,
+    scheduleId: command.scheduleId,
+    estimateMinutes: command.estimateMinutes,
+    dueAt: command.dueAt,
+    earliestStartAt: command.earliestStartAt,
+    notes: command.notes,
     createdAt: command.occurredAt,
     updatedAt: command.occurredAt,
   }
 
-  return revised(document, command, 'task-created', `Added task “${title}”.`, {
+  return revised(document, command, "task-created", `Added task “${title}”.`, {
     tasks: [...document.tasks, task],
   })
 }
 
+const deleteTask = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "delete-task" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) {
+    return failure({ code: "task-not-found", message: "That task no longer exists." })
+  }
+
+  const tasksToDelete = new Set([
+    task.id,
+    ...document.tasks.filter((t) => t.parentTaskId === task.id).map((t) => t.id),
+  ])
+
+  return revised(document, command, "task-deleted", `Deleted task “${task.title}”.`, {
+    tasks: document.tasks.filter((t) => !tasksToDelete.has(t.id)),
+    dependencies: document.dependencies.filter(
+      (d) => !tasksToDelete.has(d.fromTaskId) && !tasksToDelete.has(d.toTaskId),
+    ),
+    taskSessions: document.taskSessions.filter((s) => !tasksToDelete.has(s.taskId)),
+    proposals: document.proposals.filter((p) => !tasksToDelete.has(p.taskId)),
+  })
+}
+
+const moveTask = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "move-task" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) {
+    return failure({ code: "task-not-found", message: "That task no longer exists." })
+  }
+  const targetProject = document.projects.find((p) => p.id === command.targetProjectId)
+  if (!targetProject) {
+    return failure({ code: "project-not-found", message: "Target project does not exist." })
+  }
+
+  return revised(
+    document,
+    command,
+    "task-moved",
+    `Moved task “${task.title}” to “${targetProject.title}”.`,
+    {
+      tasks: document.tasks.map((t) => {
+        if (t.id === task.id || t.parentTaskId === task.id) {
+          return { ...t, projectId: targetProject.id, updatedAt: command.occurredAt }
+        }
+        return t
+      }),
+    },
+  )
+}
+
 const createSubtask = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-subtask' }>,
+  command: Extract<PlannerCommand, { type: "create-subtask" }>,
 ): CommandResult => {
   const title = normaliseTitle(command.title)
   if (!title) {
-    return invalidCommand('Subtask names must contain between 1 and 200 characters.')
+    return invalidCommand("Subtask names must contain between 1 and 200 characters.")
   }
 
   if (!document.projects.some((project) => project.id === command.projectId)) {
     return failure({
-      code: 'project-not-found',
-      message: 'Choose an existing project before adding a subtask.',
+      code: "project-not-found",
+      message: "Choose an existing project before adding a subtask.",
     })
   }
 
   const parent = document.tasks.find((task) => task.id === command.parentTaskId)
   if (!parent) {
     return failure({
-      code: 'parent-task-not-found',
-      message: 'Choose an existing parent task before adding a subtask.',
+      code: "parent-task-not-found",
+      message: "Choose an existing parent task before adding a subtask.",
     })
   }
 
   if (parent.projectId !== command.projectId) {
-    return invalidCommand('Subtasks must belong to the same project as their parent task.')
+    return invalidCommand("Subtasks must belong to the same project as their parent task.")
   }
 
   if (parent.parentTaskId !== undefined) {
-    return invalidCommand('Subtasks cannot be nested under another subtask.')
+    return invalidCommand("Subtasks cannot be nested under another subtask.")
   }
 
   if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
@@ -289,7 +470,7 @@ const createSubtask = (
   return revised(
     document,
     command,
-    'subtask-created',
+    "subtask-created",
     `Added subtask “${title}” to “${parent.title}”.`,
     {
       tasks: [...document.tasks, subtask],
@@ -299,13 +480,13 @@ const createSubtask = (
 
 const updateTaskConstraints = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'update-task-constraints' }>,
+  command: Extract<PlannerCommand, { type: "update-task-constraints" }>,
 ): CommandResult => {
   const task = document.tasks.find((candidate) => candidate.id === command.taskId)
   if (!task) {
     return failure({
-      code: 'task-not-found',
-      message: 'That task no longer exists.',
+      code: "task-not-found",
+      message: "That task no longer exists.",
     })
   }
 
@@ -319,15 +500,15 @@ const updateTaskConstraints = (
       command.estimateMinutes <= 0 ||
       command.estimateMinutes > 1440)
   ) {
-    return invalidCommand('Estimated duration must be an integer between 1 and 1440 minutes.')
+    return invalidCommand("Estimated duration must be an integer between 1 and 1440 minutes.")
   }
 
   if (command.dueAt !== undefined && !isUtcTimestamp(command.dueAt)) {
-    return invalidCommand('Due date must be a valid UTC timestamp.')
+    return invalidCommand("Due date must be a valid UTC timestamp.")
   }
 
   if (command.earliestStartAt !== undefined && !isUtcTimestamp(command.earliestStartAt)) {
-    return invalidCommand('Earliest start date must be a valid UTC timestamp.')
+    return invalidCommand("Earliest start date must be a valid UTC timestamp.")
   }
 
   const effectiveEarliest =
@@ -339,23 +520,36 @@ const updateTaskConstraints = (
     effectiveDue &&
     Date.parse(effectiveEarliest) >= Date.parse(effectiveDue)
   ) {
-    return invalidCommand('Earliest start time must be before the due date.')
+    return invalidCommand("Earliest start time must be before the due date.")
+  }
+
+  const nextTitle = command.title ? normaliseTitle(command.title) : undefined
+  if (command.title && !nextTitle) {
+    return invalidCommand("Task names must contain between 1 and 200 characters.")
   }
 
   const nextTask: Task = {
     ...task,
+    title: nextTitle ?? task.title,
     estimateMinutes:
       command.estimateMinutes !== undefined ? command.estimateMinutes : task.estimateMinutes,
     dueAt: command.dueAt !== undefined ? command.dueAt : task.dueAt,
     earliestStartAt:
       command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt,
+    priority: command.priority !== undefined ? command.priority : task.priority,
+    deadlineStrictness:
+      command.deadlineStrictness !== undefined
+        ? command.deadlineStrictness
+        : task.deadlineStrictness,
+    scheduleId: command.scheduleId !== undefined ? command.scheduleId : task.scheduleId,
+    notes: command.notes !== undefined ? command.notes : task.notes,
     updatedAt: command.occurredAt,
   }
 
   return revised(
     document,
     command,
-    'task-constraints-updated',
+    "task-constraints-updated",
     `Updated constraints for task “${task.title}”.`,
     {
       tasks: document.tasks.map((candidate) =>
@@ -367,13 +561,13 @@ const updateTaskConstraints = (
 
 const setTaskCompletion = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'set-task-completion' }>,
+  command: Extract<PlannerCommand, { type: "set-task-completion" }>,
 ): CommandResult => {
   const task = document.tasks.find((candidate) => candidate.id === command.taskId)
   if (!task) {
     return failure({
-      code: 'task-not-found',
-      message: 'That task no longer exists.',
+      code: "task-not-found",
+      message: "That task no longer exists.",
     })
   }
 
@@ -388,11 +582,11 @@ const setTaskCompletion = (
     updatedAt: command.occurredAt,
   }
 
-  const action = completed ? 'Completed' : 'Reopened'
+  const action = completed ? "Completed" : "Reopened"
   return revised(
     document,
     command,
-    'task-completion-changed',
+    "task-completion-changed",
     `${action} task “${task.title}”.`,
     {
       tasks: document.tasks.map((candidate) =>
@@ -402,13 +596,124 @@ const setTaskCompletion = (
   )
 }
 
+const setTaskPriority = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "set-task-priority" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) return failure({ code: "task-not-found", message: "Task not found." })
+
+  return revised(
+    document,
+    command,
+    "task-priority-changed",
+    `Set priority for “${task.title}” to ${command.priority}.`,
+    {
+      tasks: document.tasks.map((t) =>
+        t.id === task.id ? { ...t, priority: command.priority, updatedAt: command.occurredAt } : t,
+      ),
+    },
+  )
+}
+
+const setTaskStrictness = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "set-task-strictness" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) return failure({ code: "task-not-found", message: "Task not found." })
+
+  return revised(
+    document,
+    command,
+    "task-strictness-changed",
+    `Set deadline strictness for “${task.title}” to ${command.deadlineStrictness}.`,
+    {
+      tasks: document.tasks.map((t) =>
+        t.id === task.id
+          ? { ...t, deadlineStrictness: command.deadlineStrictness, updatedAt: command.occurredAt }
+          : t,
+      ),
+    },
+  )
+}
+
+const setTaskSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "set-task-schedule" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) return failure({ code: "task-not-found", message: "Task not found." })
+
+  return revised(
+    document,
+    command,
+    "task-schedule-changed",
+    `Updated schedule binding for “${task.title}”.`,
+    {
+      tasks: document.tasks.map((t) =>
+        t.id === task.id
+          ? { ...t, scheduleId: command.scheduleId, updatedAt: command.occurredAt }
+          : t,
+      ),
+    },
+  )
+}
+
+const setTaskNotes = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "set-task-notes" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) return failure({ code: "task-not-found", message: "Task not found." })
+
+  return revised(
+    document,
+    command,
+    "task-notes-updated",
+    `Updated notes for “${task.title}”.`,
+    {
+      tasks: document.tasks.map((t) =>
+        t.id === task.id ? { ...t, notes: command.notes, updatedAt: command.occurredAt } : t,
+      ),
+    },
+  )
+}
+
+const setTaskRecurrence = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "set-task-recurrence" }>,
+): CommandResult => {
+  const task = document.tasks.find((t) => t.id === command.taskId)
+  if (!task) return failure({ code: "task-not-found", message: "Task not found." })
+
+  return revised(
+    document,
+    command,
+    "task-recurrence-updated",
+    `Updated recurrence rule for “${task.title}”.`,
+    {
+      tasks: document.tasks.map((t) =>
+        t.id === task.id
+          ? {
+              ...t,
+              recurrence: command.recurrence,
+              isRecurringParent: Boolean(command.recurrence),
+              updatedAt: command.occurredAt,
+            }
+          : t,
+      ),
+    },
+  )
+}
+
 const createFixedEvent = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-fixed-event' }>,
+  command: Extract<PlannerCommand, { type: "create-fixed-event" }>,
 ): CommandResult => {
   const title = normaliseTitle(command.title)
   if (!title) {
-    return invalidCommand('Event titles must contain between 1 and 200 characters.')
+    return invalidCommand("Event titles must contain between 1 and 200 characters.")
   }
 
   const timeIssue = validateTimeRange(command.startAt, command.endAt)
@@ -429,20 +734,20 @@ const createFixedEvent = (
     updatedAt: command.occurredAt,
   }
 
-  return revised(document, command, 'fixed-event-created', `Created fixed event “${title}”.`, {
+  return revised(document, command, "fixed-event-created", `Created fixed event “${title}”.`, {
     fixedEvents: [...document.fixedEvents, event],
   })
 }
 
 const deleteFixedEvent = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'delete-fixed-event' }>,
+  command: Extract<PlannerCommand, { type: "delete-fixed-event" }>,
 ): CommandResult => {
   const event = document.fixedEvents.find((candidate) => candidate.id === command.eventId)
   if (!event) {
     return failure({
-      code: 'fixed-event-not-found',
-      message: 'That fixed event no longer exists.',
+      code: "fixed-event-not-found",
+      message: "That fixed event no longer exists.",
     })
   }
 
@@ -450,20 +755,20 @@ const deleteFixedEvent = (
     return duplicateId()
   }
 
-  return revised(document, command, 'fixed-event-deleted', `Deleted fixed event “${event.title}”.`, {
+  return revised(document, command, "fixed-event-deleted", `Deleted fixed event “${event.title}”.`, {
     fixedEvents: document.fixedEvents.filter((candidate) => candidate.id !== command.eventId),
   })
 }
 
 const createTaskSession = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-task-session' }>,
+  command: Extract<PlannerCommand, { type: "create-task-session" }>,
 ): CommandResult => {
   const task = document.tasks.find((candidate) => candidate.id === command.taskId)
   if (!task) {
     return failure({
-      code: 'task-not-found',
-      message: 'Cannot schedule a session for a task that does not exist.',
+      code: "task-not-found",
+      message: "Cannot schedule a session for a task that does not exist.",
     })
   }
 
@@ -481,7 +786,7 @@ const createTaskSession = (
     taskId: command.taskId,
     startAt: command.startAt,
     endAt: command.endAt,
-    locked: true, // Manually placed sessions are locked/pinned by default
+    locked: true,
     createdAt: command.occurredAt,
     updatedAt: command.occurredAt,
   }
@@ -489,7 +794,7 @@ const createTaskSession = (
   return revised(
     document,
     command,
-    'task-session-created',
+    "task-session-created",
     `Scheduled session for task “${task.title}”.`,
     {
       taskSessions: [...document.taskSessions, session],
@@ -499,13 +804,13 @@ const createTaskSession = (
 
 const deleteTaskSession = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'delete-task-session' }>,
+  command: Extract<PlannerCommand, { type: "delete-task-session" }>,
 ): CommandResult => {
   const session = document.taskSessions.find((candidate) => candidate.id === command.sessionId)
   if (!session) {
     return failure({
-      code: 'task-session-not-found',
-      message: 'That task session no longer exists.',
+      code: "task-session-not-found",
+      message: "That task session no longer exists.",
     })
   }
 
@@ -513,20 +818,20 @@ const deleteTaskSession = (
     return duplicateId()
   }
 
-  return revised(document, command, 'task-session-deleted', 'Deleted task session.', {
+  return revised(document, command, "task-session-deleted", "Deleted task session.", {
     taskSessions: document.taskSessions.filter((candidate) => candidate.id !== command.sessionId),
   })
 }
 
 const toggleTaskSessionLock = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'toggle-task-session-lock' }>,
+  command: Extract<PlannerCommand, { type: "toggle-task-session-lock" }>,
 ): CommandResult => {
   const session = document.taskSessions.find((s) => s.id === command.sessionId)
   if (!session) {
     return failure({
-      code: 'task-session-not-found',
-      message: 'That task session no longer exists.',
+      code: "task-session-not-found",
+      message: "That task session no longer exists.",
     })
   }
 
@@ -535,12 +840,12 @@ const toggleTaskSessionLock = (
   }
 
   const nextLocked = !session.locked
-  const action = nextLocked ? 'Pinned' : 'Unpinned'
+  const action = nextLocked ? "Pinned" : "Unpinned"
 
   return revised(
     document,
     command,
-    'task-session-lock-toggled',
+    "task-session-lock-toggled",
     `${action} session on the schedule.`,
     {
       taskSessions: document.taskSessions.map((s) =>
@@ -554,10 +859,10 @@ const toggleTaskSessionLock = (
 
 const createDependency = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'create-dependency' }>,
+  command: Extract<PlannerCommand, { type: "create-dependency" }>,
 ): CommandResult => {
   if (command.fromTaskId === command.toTaskId) {
-    return invalidCommand('A task cannot depend on itself.')
+    return invalidCommand("A task cannot depend on itself.")
   }
 
   const fromTask = document.tasks.find((t) => t.id === command.fromTaskId)
@@ -565,8 +870,8 @@ const createDependency = (
 
   if (!fromTask || !toTask) {
     return failure({
-      code: 'task-not-found',
-      message: 'Both dependent and prerequisite tasks must exist.',
+      code: "task-not-found",
+      message: "Both dependent and prerequisite tasks must exist.",
     })
   }
 
@@ -574,7 +879,7 @@ const createDependency = (
     (d) => d.fromTaskId === command.fromTaskId && d.toTaskId === command.toTaskId,
   )
   if (alreadyExists) {
-    return invalidCommand('This dependency relationship already exists.')
+    return invalidCommand("This dependency relationship already exists.")
   }
 
   if (
@@ -583,7 +888,7 @@ const createDependency = (
       toTaskId: command.toTaskId,
     })
   ) {
-    return invalidCommand('Adding this dependency would create a circular dependency.')
+    return invalidCommand("Adding this dependency would create a circular dependency.")
   }
 
   if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
@@ -600,7 +905,7 @@ const createDependency = (
   return revised(
     document,
     command,
-    'dependency-created',
+    "dependency-created",
     `Set “${toTask.title}” to depend on “${fromTask.title}”.`,
     {
       dependencies: [...document.dependencies, dependency],
@@ -610,13 +915,13 @@ const createDependency = (
 
 const deleteDependency = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'delete-dependency' }>,
+  command: Extract<PlannerCommand, { type: "delete-dependency" }>,
 ): CommandResult => {
   const dep = document.dependencies.find((d) => d.id === command.dependencyId)
   if (!dep) {
     return failure({
-      code: 'dependency-not-found',
-      message: 'That dependency no longer exists.',
+      code: "dependency-not-found",
+      message: "That dependency no longer exists.",
     })
   }
 
@@ -627,17 +932,86 @@ const deleteDependency = (
   return revised(
     document,
     command,
-    'dependency-deleted',
-    'Removed task dependency.',
+    "dependency-deleted",
+    "Removed task dependency.",
     {
       dependencies: document.dependencies.filter((d) => d.id !== command.dependencyId),
     },
   )
 }
 
+const createSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "create-schedule" }>,
+): CommandResult => {
+  const name = normaliseTitle(command.name)
+  if (!name) return invalidCommand("Schedule name must contain between 1 and 200 characters.")
+
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const schedule: Schedule = {
+    id: command.id,
+    name,
+    availability: { workingWindows: command.workingWindows },
+    color: command.color,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  return revised(document, command, "schedule-created", `Created schedule “${name}”.`, {
+    schedules: [...document.schedules, schedule],
+  })
+}
+
+const updateSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "update-schedule" }>,
+): CommandResult => {
+  const sched = document.schedules.find((s) => s.id === command.scheduleId)
+  if (!sched) return failure({ code: "schedule-not-found", message: "Schedule not found." })
+
+  const nextName = command.name ? normaliseTitle(command.name) : undefined
+  const nextWindows = command.workingWindows ? { workingWindows: command.workingWindows } : sched.availability
+
+  return revised(document, command, "schedule-updated", `Updated schedule “${sched.name}”.`, {
+    schedules: document.schedules.map((s) => {
+      if (s.id === sched.id) {
+        return {
+          ...s,
+          name: nextName ?? s.name,
+          availability: nextWindows,
+          color: command.color !== undefined ? command.color : s.color,
+          isDefault: command.isDefault !== undefined ? command.isDefault : s.isDefault,
+          updatedAt: command.occurredAt,
+        }
+      }
+      if (command.isDefault) {
+        return { ...s, isDefault: false }
+      }
+      return s
+    }),
+  })
+}
+
+const deleteSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: "delete-schedule" }>,
+): CommandResult => {
+  const sched = document.schedules.find((s) => s.id === command.scheduleId)
+  if (!sched) return failure({ code: "schedule-not-found", message: "Schedule not found." })
+  if (document.schedules.length <= 1) return invalidCommand("Cannot delete the only remaining schedule.")
+
+  return revised(document, command, "schedule-deleted", `Deleted schedule “${sched.name}”.`, {
+    schedules: document.schedules.filter((s) => s.id !== command.scheduleId),
+    tasks: document.tasks.map((t) => (t.scheduleId === command.scheduleId ? { ...t, scheduleId: undefined } : t)),
+  })
+}
+
 const applyPlan = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'apply-plan' }>,
+  command: Extract<PlannerCommand, { type: "apply-plan" }>,
 ): CommandResult => {
   if (hasRevisionId(document, command.revisionId)) {
     return duplicateId()
@@ -648,7 +1022,7 @@ const applyPlan = (
   return revised(
     document,
     command,
-    'schedule-planned',
+    "schedule-planned",
     `Applied reference schedule (${command.sessions.length} session(s) allocated).`,
     {
       taskSessions: command.sessions,
@@ -659,16 +1033,16 @@ const applyPlan = (
 
 const undoLastPlan = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'undo-last-plan' }>,
+  command: Extract<PlannerCommand, { type: "undo-last-plan" }>,
 ): CommandResult => {
   const targetRevision = [...document.revisions]
     .reverse()
-    .find((r) => r.kind === 'schedule-planned' && r.snapshot)
+    .find((r) => r.kind === "schedule-planned" && r.snapshot)
 
   if (!targetRevision || !targetRevision.snapshot) {
     return failure({
-      code: 'invalid-command',
-      message: 'No previous schedule plan to undo.',
+      code: "invalid-command",
+      message: "No previous schedule plan to undo.",
     })
   }
 
@@ -676,7 +1050,7 @@ const undoLastPlan = (
   try {
     restoredSessions = JSON.parse(targetRevision.snapshot) as TaskSession[]
   } catch {
-    return invalidCommand('Failed to parse previous schedule snapshot.')
+    return invalidCommand("Failed to parse previous schedule snapshot.")
   }
 
   if (hasRevisionId(document, command.revisionId)) {
@@ -686,8 +1060,8 @@ const undoLastPlan = (
   return revised(
     document,
     command,
-    'plan-undone',
-    'Reverted to previous schedule.',
+    "plan-undone",
+    "Reverted to previous schedule.",
     {
       taskSessions: restoredSessions,
     },
@@ -696,7 +1070,7 @@ const undoLastPlan = (
 
 const repairScheduleCommand = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'repair-schedule' }>,
+  command: Extract<PlannerCommand, { type: "repair-schedule" }>,
 ): CommandResult => {
   if (hasRevisionId(document, command.revisionId)) {
     return duplicateId()
@@ -707,8 +1081,8 @@ const repairScheduleCommand = (
   return revised(
     document,
     command,
-    'schedule-repaired',
-    'Repaired schedule and shifted overdue sessions forward.',
+    "schedule-repaired",
+    "Repaired schedule and shifted overdue sessions forward.",
     {
       taskSessions: command.sessions,
     },
@@ -718,7 +1092,7 @@ const repairScheduleCommand = (
 
 const updateAvailability = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'update-availability' }>,
+  command: Extract<PlannerCommand, { type: "update-availability" }>,
 ): CommandResult => {
   for (const win of command.workingWindows) {
     if (
@@ -728,7 +1102,7 @@ const updateAvailability = (
       win.endHour > 24 ||
       win.startHour >= win.endHour
     ) {
-      return invalidCommand('Availability window hours must be valid (0-24) with start before end.')
+      return invalidCommand("Availability window hours must be valid (0-24) with start before end.")
     }
   }
 
@@ -739,8 +1113,8 @@ const updateAvailability = (
   return revised(
     document,
     command,
-    'dependency-created',
-    'Updated working availability hours.',
+    "dependency-created",
+    "Updated working availability hours.",
     {
       availability: {
         workingWindows: command.workingWindows,
@@ -751,11 +1125,11 @@ const updateAvailability = (
 
 const updatePolicy = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'update-policy' }>,
+  command: Extract<PlannerCommand, { type: "update-policy" }>,
 ): CommandResult => {
-  const allowedPresets: PolicyPreset[] = ['balanced', 'focus', 'deadline']
+  const allowedPresets: PolicyPreset[] = ["balanced", "focus", "deadline"]
   if (!allowedPresets.includes(command.policy.preset)) {
-    return invalidCommand('Policy preset must be balanced, focus, or deadline.')
+    return invalidCommand("Policy preset must be balanced, focus, or deadline.")
   }
   if (
     command.policy.maxDailyWorkMinutes !== undefined &&
@@ -763,7 +1137,7 @@ const updatePolicy = (
       command.policy.maxDailyWorkMinutes < 30 ||
       command.policy.maxDailyWorkMinutes > 1440)
   ) {
-    return invalidCommand('Max daily work minutes must be an integer between 30 and 1440.')
+    return invalidCommand("Max daily work minutes must be an integer between 30 and 1440.")
   }
 
   if (hasRevisionId(document, command.revisionId)) {
@@ -773,7 +1147,7 @@ const updatePolicy = (
   return revised(
     document,
     command,
-    'policy-updated',
+    "policy-updated",
     `Updated planning policy to ${command.policy.preset}.`,
     {
       policy: command.policy,
@@ -783,14 +1157,14 @@ const updatePolicy = (
 
 const recordProposalDecision = (
   document: PlannerDocument,
-  command: Extract<PlannerCommand, { type: 'record-proposal-decision' }>,
+  command: Extract<PlannerCommand, { type: "record-proposal-decision" }>,
 ): CommandResult => {
   if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
     return duplicateId()
   }
 
-  const kind = command.decision.accepted ? 'proposal-accepted' : 'proposal-rejected'
-  const action = command.decision.accepted ? 'Accepted' : 'Dismissed'
+  const kind = command.decision.accepted ? "proposal-accepted" : "proposal-rejected"
+  const action = command.decision.accepted ? "Accepted" : "Dismissed"
   const fallbackReason = `${action} ${command.decision.capability} suggestion (${command.decision.provenance}).`
 
   return revised(
@@ -812,7 +1186,7 @@ const revised = (
   changes: Partial<
     Pick<
       PlannerDocument,
-      'projects' | 'tasks' | 'dependencies' | 'availability' | 'policy' | 'fixedEvents' | 'taskSessions' | 'proposals'
+      "projects" | "tasks" | "dependencies" | "availability" | "schedules" | "policy" | "fixedEvents" | "taskSessions" | "proposals"
     >
   >,
   snapshot?: string,
@@ -846,22 +1220,22 @@ const revised = (
 const validateMetadata = (command: CommandMetadata): CommandFailure | undefined => {
   if (!isIdentifier(command.id) || !isIdentifier(command.revisionId)) {
     return {
-      code: 'invalid-command',
-      message: 'Commands need stable identifiers.',
+      code: "invalid-command",
+      message: "Commands need stable identifiers.",
     }
   }
 
   if (!isUtcTimestamp(command.occurredAt)) {
     return {
-      code: 'invalid-command',
-      message: 'Commands need a valid UTC timestamp.',
+      code: "invalid-command",
+      message: "Commands need a valid UTC timestamp.",
     }
   }
 
   if (command.reason !== undefined && !normaliseReason(command.reason)) {
     return {
-      code: 'invalid-command',
-      message: 'Reasons must contain between 1 and 300 characters when supplied.',
+      code: "invalid-command",
+      message: "Reasons must contain between 1 and 300 characters when supplied.",
     }
   }
 
@@ -871,15 +1245,15 @@ const validateMetadata = (command: CommandMetadata): CommandFailure | undefined 
 const validateTimeRange = (startAt: string, endAt: string): CommandFailure | undefined => {
   if (!isUtcTimestamp(startAt) || !isUtcTimestamp(endAt)) {
     return {
-      code: 'invalid-command',
-      message: 'Start and end times must be valid UTC timestamps.',
+      code: "invalid-command",
+      message: "Start and end times must be valid UTC timestamps.",
     }
   }
 
   if (Date.parse(startAt) >= Date.parse(endAt)) {
     return {
-      code: 'invalid-command',
-      message: 'Start time must be before end time.',
+      code: "invalid-command",
+      message: "Start time must be before end time.",
     }
   }
 
@@ -903,6 +1277,7 @@ const hasId = (document: PlannerDocument, id: string): boolean =>
   document.projects.some((project) => project.id === id) ||
   document.tasks.some((task) => task.id === id) ||
   document.dependencies.some((dep) => dep.id === id) ||
+  (document.schedules && document.schedules.some((s) => s.id === id)) ||
   document.fixedEvents.some((event) => event.id === id) ||
   document.taskSessions.some((session) => session.id === id) ||
   document.proposals.some((proposal) => proposal.id === id)
@@ -918,10 +1293,10 @@ const isUtcTimestamp = (value: string): boolean => {
 }
 
 const invalidCommand = (message: string): CommandResult =>
-  failure({ code: 'invalid-command', message })
+  failure({ code: "invalid-command", message })
 
 const duplicateId = (): CommandResult =>
   failure({
-    code: 'duplicate-id',
-    message: 'That identifier is already in use. Please try again.',
+    code: "duplicate-id",
+    message: "That identifier is already in use. Please try again.",
   })
