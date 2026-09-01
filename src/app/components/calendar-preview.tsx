@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { FixedEvent, PlanRisk, Task, TaskSession } from '../../domain/model'
+import type { FixedEvent, PlanningPolicy, PlanRisk, PolicyPreset, Task, TaskSession } from '../../domain/model'
 
 interface CalendarPreviewProps {
   hasProjects: boolean
@@ -9,11 +9,14 @@ interface CalendarPreviewProps {
   tasks: Task[]
   fixedEvents: FixedEvent[]
   taskSessions: TaskSession[]
+  policy?: PlanningPolicy
   selectedTaskId: string | null
   onCreateFixedEvent: (title: string, startAt: string, endAt: string) => boolean
   onScheduleTaskSession: (taskId: string, startAt: string, endAt: string) => boolean
   onDeleteFixedEvent: (eventId: string) => boolean
   onDeleteTaskSession: (sessionId: string) => boolean
+  onToggleSessionLock?: (sessionId: string) => boolean
+  onUpdatePolicy?: (policy: PlanningPolicy) => boolean
   onAutoPlan?: () => void
   risks?: PlanRisk[]
 }
@@ -34,11 +37,14 @@ export const CalendarPreview = ({
   tasks,
   fixedEvents,
   taskSessions,
+  policy,
   selectedTaskId,
   onCreateFixedEvent,
   onScheduleTaskSession,
   onDeleteFixedEvent,
   onDeleteTaskSession,
+  onToggleSessionLock,
+  onUpdatePolicy,
   onAutoPlan,
   risks = [],
 }: CalendarPreviewProps) => {
@@ -102,6 +108,8 @@ export const CalendarPreview = ({
   const totalCalendarItems = fixedEvents.length + taskSessions.length
   const showEmptyState = !hasProjects || !hasTasks
 
+  const todayIso = new Date().toISOString().slice(0, 10)
+
   return (
     <section className="calendar-panel" aria-labelledby="calendar-heading">
       <header className="calendar-panel__header">
@@ -109,6 +117,29 @@ export const CalendarPreview = ({
           <h1 id="calendar-heading">{heading}</h1>
         </div>
         <div className="calendar-panel__actions">
+          {policy && onUpdatePolicy ? (
+            <div className="calendar-policy-select">
+              <label htmlFor="calendar-policy-preset" className="visually-hidden">
+                Planning Mode
+              </label>
+              <select
+                id="calendar-policy-preset"
+                className="calendar-policy-dropdown"
+                value={policy.preset}
+                onChange={(e) =>
+                  onUpdatePolicy({
+                    ...policy,
+                    preset: e.target.value as PolicyPreset,
+                  })
+                }
+              >
+                <option value="balanced">Mode: Balanced (6h max/day)</option>
+                <option value="focus">Mode: Deep Focus (Contiguous)</option>
+                <option value="deadline">Mode: Deadline First (Urgent)</option>
+              </select>
+            </div>
+          ) : null}
+
           {onAutoPlan ? (
             <button
               className="button button--primary button--small"
@@ -159,200 +190,199 @@ export const CalendarPreview = ({
       <div className="calendar-grid">
         <div className="calendar-grid__corner" />
         {week.map((day) => {
-          const isToday =
-            day.getUTCFullYear() === referenceDate.getUTCFullYear() &&
-            day.getUTCMonth() === referenceDate.getUTCMonth() &&
-            day.getUTCDate() === referenceDate.getUTCDate()
+          const isCurrentToday = day.toISOString().slice(0, 10) === todayIso
           return (
-            <div className={`calendar-grid__day ${isToday ? 'is-today' : ''}`} key={day.toISOString()}>
-              <span className="calendar-grid__day-name">
+            <div
+              className={`calendar-grid__day-header ${isCurrentToday ? 'is-today' : ''}`}
+              key={day.toISOString()}
+            >
+              <span className="day-name">
                 {new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(day).toUpperCase()}
               </span>
-              <span className="calendar-grid__day-num">
-                {day.getUTCDate()}
-              </span>
+              <span className="day-number">{day.getDate()}</span>
             </div>
           )
         })}
-        {hours.flatMap((hour) => [
-          <div className="calendar-grid__time" key={`time-${hour}`}>
-            {String(hour).padStart(2, '0')}:00
-          </div>,
-          ...week.map((day) => {
-            const slotStart = new Date(
-              Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, 0, 0),
-            ).toISOString()
-            const slotEnd = new Date(
-              Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour + 1, 0, 0),
-            ).toISOString()
 
-            const slotFixed = fixedEvents.filter(
-              (e) => e.startAt >= slotStart && e.startAt < slotEnd,
-            )
-            const slotSessions = taskSessions.filter(
-              (s) => s.startAt >= slotStart && s.startAt < slotEnd,
-            )
-            const hasItems = slotFixed.length > 0 || slotSessions.length > 0
+        {hours.map((hour) => (
+          <div className="calendar-grid__row" key={hour}>
+            <div className="calendar-grid__time-label">{`${String(hour).padStart(2, '0')}:00`}</div>
+            {week.map((day) => {
+              const slotFixed = fixedEvents.filter((event) => {
+                const eventStart = new Date(event.startAt)
+                return (
+                  eventStart.getUTCFullYear() === day.getUTCFullYear() &&
+                  eventStart.getUTCMonth() === day.getUTCMonth() &&
+                  eventStart.getUTCDate() === day.getUTCDate() &&
+                  eventStart.getUTCHours() === hour
+                )
+              })
 
-            const dayLabel = new Intl.DateTimeFormat('en-GB', {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-            }).format(day)
-            const timeLabel = `${String(hour).padStart(2, '0')}:00`
+              const slotSessions = taskSessions.filter((session) => {
+                const sessionStart = new Date(session.startAt)
+                return (
+                  sessionStart.getUTCFullYear() === day.getUTCFullYear() &&
+                  sessionStart.getUTCMonth() === day.getUTCMonth() &&
+                  sessionStart.getUTCDate() === day.getUTCDate() &&
+                  sessionStart.getUTCHours() === hour
+                )
+              })
 
-            return (
-              <div
-                className={`calendar-grid__slot ${hasItems ? 'is-occupied' : ''}`}
-                key={`${day.toISOString()}-${hour}`}
-              >
-                {slotFixed.map((event) => (
-                  <div className="calendar-item calendar-item--fixed" key={event.id}>
-                    <div className="calendar-item__content">
-                      <div className="calendar-item__meta">
-                        <span className="calendar-item__tag">Fixed</span>
-                        <button
-                          aria-label={`Remove fixed event ${event.title}`}
-                          className="calendar-item__delete"
-                          onClick={() => onDeleteFixedEvent(event.id)}
-                          type="button"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <span className="calendar-item__title">{event.title}</span>
-                    </div>
-                  </div>
-                ))}
+              const hasItems = slotFixed.length > 0 || slotSessions.length > 0
+              const dayLabel = new Intl.DateTimeFormat('en-GB', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              }).format(day)
+              const timeLabel = `${String(hour).padStart(2, '0')}:00`
 
-                {slotSessions.map((session) => {
-                  const task = taskLookup.get(session.taskId)
-                  const title = task?.title ?? 'Task session'
-                  return (
-                    <div className="calendar-item calendar-item--session" key={session.id}>
+              return (
+                <div
+                  className={`calendar-grid__slot ${hasItems ? 'is-occupied' : ''}`}
+                  key={`${day.toISOString()}-${hour}`}
+                >
+                  {slotFixed.map((event) => (
+                    <div className="calendar-item calendar-item--fixed" key={event.id}>
                       <div className="calendar-item__content">
                         <div className="calendar-item__meta">
-                          <span className="calendar-item__tag">Session</span>
+                          <span className="calendar-item__tag">Fixed</span>
                           <button
-                            aria-label={`Remove session for ${title}`}
+                            aria-label={`Remove fixed event ${event.title}`}
                             className="calendar-item__delete"
-                            onClick={() => onDeleteTaskSession(session.id)}
+                            onClick={() => onDeleteFixedEvent(event.id)}
                             type="button"
                           >
                             ×
                           </button>
                         </div>
-                        <span className="calendar-item__title">{title}</span>
+                        <span className="calendar-item__title">{event.title}</span>
                       </div>
                     </div>
-                  )
-                })}
+                  ))}
 
-                {!hasItems ? (
-                  <button
-                    aria-label={`Schedule at ${timeLabel} on ${dayLabel}`}
-                    className="calendar-grid__add-slot-btn"
-                    onClick={() => openSlotDialog(day, hour)}
-                    type="button"
-                  >
-                    <span aria-hidden="true" className="calendar-grid__add-icon">+</span>
-                  </button>
-                ) : null}
-              </div>
-            )
-          }),
-        ])}
+                  {slotSessions.map((session) => {
+                    const task = taskLookup.get(session.taskId)
+                    const title = task?.title ?? 'Task session'
+                    return (
+                      <div
+                        className={`calendar-item calendar-item--session ${session.locked ? 'is-locked' : ''}`}
+                        key={session.id}
+                      >
+                        <div className="calendar-item__content">
+                          <div className="calendar-item__meta">
+                            <span className="calendar-item__tag">{session.locked ? '🔒 Pinned' : 'Session'}</span>
+                            <div className="calendar-item__actions">
+                              {onToggleSessionLock ? (
+                                <button
+                                  aria-label={session.locked ? `Unpin session for ${title}` : `Pin session for ${title}`}
+                                  className="calendar-item__pin"
+                                  onClick={() => onToggleSessionLock(session.id)}
+                                  type="button"
+                                >
+                                  {session.locked ? '🔒' : '📌'}
+                                </button>
+                              ) : null}
+                              <button
+                                aria-label={`Remove session for ${title}`}
+                                className="calendar-item__delete"
+                                onClick={() => onDeleteTaskSession(session.id)}
+                                type="button"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                          <span className="calendar-item__title">{title}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {!hasItems ? (
+                    <button
+                      aria-label={`Schedule at ${timeLabel} on ${dayLabel}`}
+                      className="calendar-grid__add-slot-btn"
+                      onClick={() => openSlotDialog(day, hour)}
+                      type="button"
+                    >
+                      <span aria-hidden="true" className="calendar-grid__add-icon">+</span>
+                    </button>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        ))}
       </div>
 
       {showEmptyState && totalCalendarItems === 0 ? (
-        <div className="calendar-empty-state">
-          <div className="calendar-empty-state__icon" aria-hidden="true">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-          </div>
-          <h2>
-            {!hasProjects
-              ? 'Your calendar starts here'
-              : 'Your calendar will appear here'}
-          </h2>
+        <div className="calendar-placeholder-card">
+          <div className="calendar-placeholder-card__icon">📅</div>
+          <h3>Your calendar starts here</h3>
           <p>
-            {!hasProjects
-              ? 'Create a project to begin.'
-              : 'Add a task first, then schedule sessions into time slots.'}
+            Add tasks and fixed commitments, or click any slot to schedule focused work.
           </p>
         </div>
       ) : null}
 
+      {/* Quick Schedule Modal */}
       {activeSlot ? (
-        <div
-          aria-modal="true"
-          className="calendar-dialog-overlay"
-          role="dialog"
-        >
+        <div aria-modal="true" className="calendar-dialog-overlay" role="dialog">
           <div className="calendar-dialog">
-            <h2 id="calendar-dialog-heading">
-              Schedule at {String(activeSlot.hour).padStart(2, '0')}:00
-            </h2>
-            <p className="calendar-dialog__sub">
+            <h2>
+              Schedule at {String(activeSlot.hour).padStart(2, '0')}:00 on{' '}
               {new Intl.DateTimeFormat('en-GB', {
-                weekday: 'long',
+                weekday: 'short',
                 day: 'numeric',
-                month: 'long',
+                month: 'short',
               }).format(activeSlot.day)}
-            </p>
+            </h2>
+
+            <div className="calendar-dialog__toggle">
+              <button
+                className={`calendar-dialog__toggle-btn ${scheduleMode === 'task' ? 'is-active' : ''}`}
+                onClick={() => setScheduleMode('task')}
+                type="button"
+              >
+                Task Session
+              </button>
+              <button
+                className={`calendar-dialog__toggle-btn ${scheduleMode === 'fixed' ? 'is-active' : ''}`}
+                onClick={() => setScheduleMode('fixed')}
+                type="button"
+              >
+                Fixed Event
+              </button>
+            </div>
 
             <form onSubmit={submitSchedule}>
-              <div className="calendar-dialog__modes" role="radiogroup" aria-label="Schedule type">
-                <label className="calendar-dialog__radio">
-                  <input
-                    checked={scheduleMode === 'task'}
-                    disabled={tasks.length === 0}
-                    name="scheduleMode"
-                    onChange={() => setScheduleMode('task')}
-                    type="radio"
-                    value="task"
-                  />
-                  <span>Task session</span>
-                </label>
-                <label className="calendar-dialog__radio">
-                  <input
-                    checked={scheduleMode === 'fixed'}
-                    name="scheduleMode"
-                    onChange={() => setScheduleMode('fixed')}
-                    type="radio"
-                    value="fixed"
-                  />
-                  <span>Fixed commitment</span>
-                </label>
-              </div>
-
               {scheduleMode === 'task' ? (
                 <div className="calendar-dialog__field">
-                  <label htmlFor="schedule-task-select">Select task</label>
-                  <select
-                    id="schedule-task-select"
-                    onChange={(e) => setChosenTaskId(e.target.value)}
-                    value={chosenTaskId}
-                  >
-                    {tasks.map((task) => (
-                      <option key={task.id} value={task.id}>
-                        {task.title} {task.completed ? '(Completed)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <label htmlFor="slot-task-select">Select Task</label>
+                  {tasks.length > 0 ? (
+                    <select
+                      id="slot-task-select"
+                      onChange={(e) => setChosenTaskId(e.target.value)}
+                      value={chosenTaskId}
+                    >
+                      {tasks.map((task) => (
+                        <option key={task.id} value={task.id}>
+                          {task.title} {task.estimateMinutes ? `(${task.estimateMinutes}m)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="calendar-dialog__hint">Create a task first to schedule a session.</p>
+                  )}
                 </div>
               ) : (
                 <div className="calendar-dialog__field">
-                  <label htmlFor="fixed-event-title">Commitment title</label>
+                  <label htmlFor="slot-fixed-title">Event Title</label>
                   <input
-                    id="fixed-event-title"
+                    id="slot-fixed-title"
                     maxLength={200}
                     onChange={(e) => setFixedTitle(e.target.value)}
-                    placeholder="e.g. Team standup, Dentist appointment"
+                    placeholder="e.g. Doctor appointment, Lecture"
                     required
                     value={fixedTitle}
                   />
@@ -360,15 +390,15 @@ export const CalendarPreview = ({
               )}
 
               <div className="calendar-dialog__actions">
-                <button
-                  className="text-button"
-                  onClick={closeSlotDialog}
-                  type="button"
-                >
+                <button className="text-button" onClick={closeSlotDialog} type="button">
                   Cancel
                 </button>
-                <button className="button button--primary button--small" type="submit">
-                  Confirm
+                <button
+                  className="button button--primary button--small"
+                  disabled={scheduleMode === 'task' && !chosenTaskId}
+                  type="submit"
+                >
+                  Schedule
                 </button>
               </div>
             </form>
@@ -380,13 +410,15 @@ export const CalendarPreview = ({
 }
 
 const getWeek = (date: Date): Date[] => {
-  const monday = new Date(date)
-  const day = monday.getDay() || 7
-  monday.setDate(monday.getDate() - day + 1)
-  monday.setHours(0, 0, 0, 0)
+  const current = new Date(date)
+  current.setUTCHours(0, 0, 0, 0)
+  const day = current.getUTCDay()
+  const diff = current.getUTCDate() - day + (day === 0 ? -6 : 1)
+  const monday = new Date(current.setUTCDate(diff))
+
   return Array.from({ length: 7 }, (_, index) => {
-    const result = new Date(monday)
-    result.setDate(monday.getDate() + index)
-    return result
+    const next = new Date(monday)
+    next.setUTCDate(monday.getUTCDate() + index)
+    return next
   })
 }

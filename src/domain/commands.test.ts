@@ -533,4 +533,77 @@ describe('executeCommand', () => {
       },
     })
   })
+
+  it('updates planning policy and toggles session lock state', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    const t1 = executeCommand(p1.ok ? p1.value.document : empty, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Task 1',
+    })
+    const s1 = executeCommand(t1.ok ? t1.value.document : empty, {
+      type: 'create-task-session',
+      id: 'session-1',
+      revisionId: 'rev-3',
+      occurredAt: firstMoment,
+      taskId: 'task-1',
+      startAt: '2026-09-01T09:00:00.000Z',
+      endAt: '2026-09-01T10:00:00.000Z',
+    })
+    if (!s1.ok) throw new Error()
+
+    // Toggle lock state
+    const lockToggled = executeCommand(s1.value.document, {
+      type: 'toggle-task-session-lock',
+      id: 'session-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      sessionId: 'session-1',
+    })
+    expect(lockToggled).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          taskSessions: [{ id: 'session-1', locked: false }],
+        },
+        revision: { number: 4, kind: 'task-session-lock-toggled' },
+      },
+    })
+
+    // Update policy
+    const policyUpdated = executeCommand(s1.value.document, {
+      type: 'update-policy',
+      id: 'pol-1',
+      revisionId: 'rev-5',
+      occurredAt: secondMoment,
+      policy: {
+        preset: 'focus',
+        maxDailyWorkMinutes: 240,
+        preferredTime: 'morning',
+      },
+    })
+    expect(policyUpdated).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          policy: {
+            preset: 'focus',
+            maxDailyWorkMinutes: 240,
+            preferredTime: 'morning',
+          },
+        },
+        revision: { number: 4, kind: 'policy-updated' },
+      },
+    })
+  })
 })

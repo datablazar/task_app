@@ -1,4 +1,4 @@
-export const PLANNER_SCHEMA_VERSION = 4 as const
+export const PLANNER_SCHEMA_VERSION = 5 as const
 
 export type RevisionKind =
   | 'project-created'
@@ -10,10 +10,26 @@ export type RevisionKind =
   | 'fixed-event-deleted'
   | 'task-session-created'
   | 'task-session-deleted'
+  | 'task-session-lock-toggled'
   | 'dependency-created'
   | 'dependency-deleted'
   | 'schedule-planned'
   | 'plan-undone'
+  | 'policy-updated'
+
+export type PolicyPreset = 'balanced' | 'focus' | 'deadline'
+
+export interface PlanningPolicy {
+  preset: PolicyPreset
+  maxDailyWorkMinutes?: number // Default 360 (6 hours)
+  preferredTime?: 'morning' | 'afternoon' | 'any'
+}
+
+export const DEFAULT_POLICY: PlanningPolicy = {
+  preset: 'balanced',
+  maxDailyWorkMinutes: 360,
+  preferredTime: 'any',
+}
 
 export interface Project {
   id: string
@@ -84,6 +100,7 @@ export interface TaskSession {
   taskId: string
   startAt: string
   endAt: string
+  locked?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +122,7 @@ export interface PlannerDocument {
   tasks: Task[]
   dependencies: Dependency[]
   availability: Availability
+  policy: PlanningPolicy
   fixedEvents: FixedEvent[]
   taskSessions: TaskSession[]
   revisions: Revision[]
@@ -118,6 +136,7 @@ export const createEmptyPlannerDocument = (timeZone = 'UTC'): PlannerDocument =>
   tasks: [],
   dependencies: [],
   availability: DEFAULT_AVAILABILITY,
+  policy: DEFAULT_POLICY,
   fixedEvents: [],
   taskSessions: [],
   revisions: [],

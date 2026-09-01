@@ -506,6 +506,31 @@ button:focus-visible {
   gap: 10px;
 }
 
+.calendar-policy-dropdown {
+  padding: 5px 9px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: var(--transition-smooth);
+}
+
+.calendar-policy-dropdown:hover {
+  border-color: var(--brand-accent);
+  color: var(--text-primary);
+}
+
+.calendar-policy-dropdown:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
 .calendar-risks-banner {
   display: flex;
   align-items: flex-start;
@@ -748,6 +773,13 @@ button:focus-visible {
   color: var(--brand-primary);
 }
 
+.calendar-item--session.is-locked {
+  background: #fdf4ff;
+  border-color: #f0abfc;
+  border-left: 3px solid #c026d3;
+  color: #a21caf;
+}
+
 .calendar-item__content {
   display: flex;
   flex-direction: column;
@@ -758,6 +790,36 @@ button:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.calendar-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.calendar-item__pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: currentColor;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: var(--transition-smooth);
+}
+
+.calendar-item:hover .calendar-item__pin {
+  opacity: 1;
+}
+
+.calendar-item__pin:hover {
+  transform: scale(1.15);
 }
 
 .calendar-item__tag {

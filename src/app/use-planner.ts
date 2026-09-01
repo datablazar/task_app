@@ -3,7 +3,7 @@ import { createEmptyPlannerDocument } from '../domain/model'
 import { createStableId } from './ids'
 import { generateReferencePlan } from '../domain/planner-engine'
 import type { PlannerWorkspace } from '../application/planner-workspace'
-import type { PlanRisk, PlannerDocument, Project } from '../domain/model'
+import type { PlanningPolicy, PlanRisk, PlannerDocument, Project } from '../domain/model'
 
 export interface PlannerNotice {
   tone: 'success' | 'error'
@@ -342,6 +342,46 @@ export const usePlanner = ({
     [document.revisions],
   )
 
+  const toggleSessionLock = useCallback(
+    (sessionId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'toggle-task-session-lock',
+        id: sessionId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        sessionId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Session pinned state updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const updatePolicy = useCallback(
+    (policy: PlanningPolicy): boolean => {
+      const result = workspace.execute(document, {
+        type: 'update-policy',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        policy,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: `Planning mode set to ${policy.preset}.` })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
   const restore = useCallback(
     (raw: string): boolean => {
       const result = workspace.restore(raw)
@@ -385,7 +425,9 @@ export const usePlanner = ({
     restore,
     risks: latestRisks,
     setTaskCompletion,
+    toggleSessionLock,
     undoLastPlan,
+    updatePolicy,
     updateTaskConstraints,
   }
 }

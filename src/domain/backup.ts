@@ -1,4 +1,4 @@
-import { DEFAULT_AVAILABILITY, PLANNER_SCHEMA_VERSION } from './model'
+import { DEFAULT_AVAILABILITY, DEFAULT_POLICY, PLANNER_SCHEMA_VERSION } from './model'
 import { failure, success } from './result'
 import type {
   Availability,
@@ -6,6 +6,8 @@ import type {
   Dependency,
   FixedEvent,
   PlannerDocument,
+  PlanningPolicy,
+  PolicyPreset,
   Project,
   Revision,
   RevisionKind,
@@ -57,7 +59,7 @@ export const validatePlannerDocument = (
     return invalidBackup('A backup must contain a planner document.')
   }
 
-  // Handle migration from earlier versions to current schema (v4)
+  // Handle migration from earlier versions to current schema (v5)
   let docRecord = candidate
   if (docRecord.schemaVersion === 1) {
     if (
@@ -79,6 +81,7 @@ export const validatePlannerDocument = (
       taskSessions: [],
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
+      policy: DEFAULT_POLICY,
     }
   } else if (docRecord.schemaVersion === 2 || docRecord.schemaVersion === 3) {
     if (
@@ -100,6 +103,29 @@ export const validatePlannerDocument = (
       schemaVersion: PLANNER_SCHEMA_VERSION,
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
+      policy: DEFAULT_POLICY,
+    }
+  } else if (docRecord.schemaVersion === 4) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        'schemaVersion',
+        'timeZone',
+        'revision',
+        'projects',
+        'tasks',
+        'dependencies',
+        'availability',
+        'fixedEvents',
+        'taskSessions',
+        'revisions',
+      ])
+    ) {
+      return invalidBackup('A backup contains unsupported document fields.')
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      policy: DEFAULT_POLICY,
     }
   }
 
@@ -112,6 +138,7 @@ export const validatePlannerDocument = (
       'tasks',
       'dependencies',
       'availability',
+      'policy',
       'fixedEvents',
       'taskSessions',
       'revisions',
@@ -158,6 +185,11 @@ export const validatePlannerDocument = (
     return availability
   }
 
+  const policy = parsePolicy(docRecord.policy)
+  if (!policy.ok) {
+    return policy
+  }
+
   const fixedEvents = parseFixedEvents(docRecord.fixedEvents, identifiers)
   if (!fixedEvents.ok) {
     return fixedEvents
@@ -181,6 +213,7 @@ export const validatePlannerDocument = (
     tasks: tasks.value,
     dependencies: dependencies.value,
     availability: availability.value,
+    policy: policy.value,
     fixedEvents: fixedEvents.value,
     taskSessions: taskSessions.value,
     revisions: revisions.value,
@@ -411,6 +444,45 @@ const parseAvailability = (candidate: unknown): Result<Availability, BackupFailu
   return success({ workingWindows: windows })
 }
 
+const policyPresets: readonly PolicyPreset[] = ['balanced', 'focus', 'deadline']
+
+const parsePolicy = (candidate: unknown): Result<PlanningPolicy, BackupFailure> => {
+  if (!isRecord(candidate) || !hasOnlyKeys(candidate, ['preset', 'maxDailyWorkMinutes', 'preferredTime'])) {
+    return invalidBackup('Policy must be an object with valid settings.')
+  }
+
+  if (typeof candidate.preset !== 'string' || !policyPresets.includes(candidate.preset as PolicyPreset)) {
+    return invalidBackup('Policy preset must be balanced, focus, or deadline.')
+  }
+
+  if (
+    candidate.maxDailyWorkMinutes !== undefined &&
+    (typeof candidate.maxDailyWorkMinutes !== 'number' ||
+      !Number.isInteger(candidate.maxDailyWorkMinutes) ||
+      candidate.maxDailyWorkMinutes < 30 ||
+      candidate.maxDailyWorkMinutes > 1440)
+  ) {
+    return invalidBackup('Policy maxDailyWorkMinutes must be an integer between 30 and 1440.')
+  }
+
+  if (
+    candidate.preferredTime !== undefined &&
+    !['morning', 'afternoon', 'any'].includes(candidate.preferredTime as string)
+  ) {
+    return invalidBackup('Policy preferredTime must be morning, afternoon, or any.')
+  }
+
+  return success({
+    preset: candidate.preset as PolicyPreset,
+    maxDailyWorkMinutes:
+      typeof candidate.maxDailyWorkMinutes === 'number' ? candidate.maxDailyWorkMinutes : 360,
+    preferredTime:
+      typeof candidate.preferredTime === 'string'
+        ? (candidate.preferredTime as 'morning' | 'afternoon' | 'any')
+        : 'any',
+  })
+}
+
 const parseFixedEvents = (
   candidate: unknown,
   identifiers: Set<string>,
@@ -464,12 +536,13 @@ const parseTaskSessions = (
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'taskId', 'startAt', 'endAt', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, ['id', 'taskId', 'startAt', 'endAt', 'locked', 'createdAt', 'updatedAt']) ||
       !isIdentifier(item.id) ||
       !isIdentifier(item.taskId) ||
       !isUtcTimestamp(item.startAt) ||
       !isUtcTimestamp(item.endAt) ||
       Date.parse(item.startAt) >= Date.parse(item.endAt) ||
+      (item.locked !== undefined && typeof item.locked !== 'boolean') ||
       !isUtcTimestamp(item.createdAt) ||
       !isUtcTimestamp(item.updatedAt)
     ) {
@@ -482,14 +555,18 @@ const parseTaskSessions = (
       return invalidBackup('Session IDs must be unique.')
     }
     identifiers.add(item.id)
-    sessions.push({
+    const session: TaskSession = {
       id: item.id,
       taskId: item.taskId,
       startAt: item.startAt,
       endAt: item.endAt,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-    })
+    }
+    if (item.locked !== undefined) {
+      session.locked = item.locked
+    }
+    sessions.push(session)
   }
   return success(sessions)
 }
@@ -504,10 +581,12 @@ const revisionKinds: readonly RevisionKind[] = [
   'fixed-event-deleted',
   'task-session-created',
   'task-session-deleted',
+  'task-session-lock-toggled',
   'dependency-created',
   'dependency-deleted',
   'schedule-planned',
   'plan-undone',
+  'policy-updated',
 ]
 
 const parseRevisions = (

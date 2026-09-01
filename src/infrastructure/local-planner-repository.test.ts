@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { serialiseBackup } from '../domain/backup'
-import { DEFAULT_AVAILABILITY } from '../domain/model'
+import { DEFAULT_AVAILABILITY, DEFAULT_POLICY } from '../domain/model'
 import type { PlannerDocument } from '../domain/model'
 import { LocalPlannerRepository, plannerStorageKey } from './local-planner-repository'
 
 const document: PlannerDocument = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   timeZone: 'Europe/London',
   revision: 6,
   projects: [
@@ -47,6 +47,7 @@ const document: PlannerDocument = {
     },
   ],
   availability: DEFAULT_AVAILABILITY,
+  policy: DEFAULT_POLICY,
   fixedEvents: [
     {
       id: 'event-1',
@@ -63,6 +64,7 @@ const document: PlannerDocument = {
       taskId: 'task-1',
       startAt: '2026-09-01T14:00:00.000Z',
       endAt: '2026-09-01T15:00:00.000Z',
+      locked: true,
       createdAt: '2026-09-01T09:03:00.000Z',
       updatedAt: '2026-09-01T09:03:00.000Z',
     },
@@ -126,7 +128,7 @@ class MemoryStorage {
 }
 
 describe('LocalPlannerRepository', () => {
-  it('round-trips a complete project, task, subtask, dependency, availability, event, and session backup exactly', () => {
+  it('round-trips a complete project, task, subtask, dependency, availability, policy, event, and session backup exactly', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -142,7 +144,7 @@ describe('LocalPlannerRepository', () => {
     expect(after).toEqual(before)
   })
 
-  it('seamlessly migrates version 1, 2, and 3 backups into version 4', () => {
+  it('seamlessly migrates version 1, 2, 3, and 4 backups into version 5', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -159,30 +161,32 @@ describe('LocalPlannerRepository', () => {
     const restoredV1 = repository.restore(v1Raw)
     expect(restoredV1.ok).toBe(true)
     if (!restoredV1.ok) throw new Error('Expected successful restore')
-    expect(restoredV1.value.schemaVersion).toBe(4)
+    expect(restoredV1.value.schemaVersion).toBe(5)
     expect(restoredV1.value.fixedEvents).toEqual([])
     expect(restoredV1.value.taskSessions).toEqual([])
     expect(restoredV1.value.dependencies).toEqual([])
     expect(restoredV1.value.availability).toEqual(DEFAULT_AVAILABILITY)
+    expect(restoredV1.value.policy).toEqual(DEFAULT_POLICY)
 
-    // Migration from v3
-    const v3Raw = JSON.stringify({
-      schemaVersion: 3,
+    // Migration from v4
+    const v4Raw = JSON.stringify({
+      schemaVersion: 4,
       timeZone: 'Europe/London',
-      revision: 3,
+      revision: 4,
       projects: document.projects,
       tasks: document.tasks,
+      dependencies: document.dependencies,
+      availability: document.availability,
       fixedEvents: document.fixedEvents,
       taskSessions: document.taskSessions,
-      revisions: document.revisions.slice(0, 3),
+      revisions: document.revisions.slice(0, 4),
     })
 
-    const restoredV3 = repository.restore(v3Raw)
-    expect(restoredV3.ok).toBe(true)
-    if (!restoredV3.ok) throw new Error('Expected successful restore')
-    expect(restoredV3.value.schemaVersion).toBe(4)
-    expect(restoredV3.value.dependencies).toEqual([])
-    expect(restoredV3.value.availability).toEqual(DEFAULT_AVAILABILITY)
+    const restoredV4 = repository.restore(v4Raw)
+    expect(restoredV4.ok).toBe(true)
+    if (!restoredV4.ok) throw new Error('Expected successful restore')
+    expect(restoredV4.value.schemaVersion).toBe(5)
+    expect(restoredV4.value.policy).toEqual(DEFAULT_POLICY)
   })
 
   it('does not overwrite existing local data when an import is invalid', () => {
@@ -207,14 +211,7 @@ describe('LocalPlannerRepository', () => {
       [
         JSON.stringify({
           ...document,
-          dependencies: [
-            {
-              id: 'dep-cycle-1',
-              fromTaskId: document.tasks[0].id,
-              toTaskId: document.tasks[0].id,
-              createdAt: '2026-09-01T09:00:00.000Z',
-            },
-          ],
+          policy: { preset: 'invalid-mode' },
         }),
         'invalid-backup',
       ],

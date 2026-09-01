@@ -4,6 +4,8 @@ import type {
   Dependency,
   FixedEvent,
   PlannerDocument,
+  PlanningPolicy,
+  PolicyPreset,
   Project,
   Revision,
   RevisionKind,
@@ -72,6 +74,10 @@ export type PlannerCommand =
       sessionId: string
     })
   | (CommandMetadata & {
+      type: 'toggle-task-session-lock'
+      sessionId: string
+    })
+  | (CommandMetadata & {
       type: 'create-dependency'
       fromTaskId: string
       toTaskId: string
@@ -90,6 +96,10 @@ export type PlannerCommand =
   | (CommandMetadata & {
       type: 'update-availability'
       workingWindows: AvailabilityWindow[]
+    })
+  | (CommandMetadata & {
+      type: 'update-policy'
+      policy: PlanningPolicy
     })
 
 export interface CommandFailure {
@@ -141,6 +151,8 @@ export const executeCommand = (
       return createTaskSession(document, command)
     case 'delete-task-session':
       return deleteTaskSession(document, command)
+    case 'toggle-task-session-lock':
+      return toggleTaskSessionLock(document, command)
     case 'create-dependency':
       return createDependency(document, command)
     case 'delete-dependency':
@@ -151,6 +163,8 @@ export const executeCommand = (
       return undoLastPlan(document, command)
     case 'update-availability':
       return updateAvailability(document, command)
+    case 'update-policy':
+      return updatePolicy(document, command)
   }
 }
 
@@ -454,6 +468,7 @@ const createTaskSession = (
     taskId: command.taskId,
     startAt: command.startAt,
     endAt: command.endAt,
+    locked: true, // Manually placed sessions are locked/pinned by default
     createdAt: command.occurredAt,
     updatedAt: command.occurredAt,
   }
@@ -488,6 +503,40 @@ const deleteTaskSession = (
   return revised(document, command, 'task-session-deleted', 'Deleted task session.', {
     taskSessions: document.taskSessions.filter((candidate) => candidate.id !== command.sessionId),
   })
+}
+
+const toggleTaskSessionLock = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'toggle-task-session-lock' }>,
+): CommandResult => {
+  const session = document.taskSessions.find((s) => s.id === command.sessionId)
+  if (!session) {
+    return failure({
+      code: 'task-session-not-found',
+      message: 'That task session no longer exists.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const nextLocked = !session.locked
+  const action = nextLocked ? 'Pinned' : 'Unpinned'
+
+  return revised(
+    document,
+    command,
+    'task-session-lock-toggled',
+    `${action} session on the schedule.`,
+    {
+      taskSessions: document.taskSessions.map((s) =>
+        s.id === session.id
+          ? { ...s, locked: nextLocked, updatedAt: command.occurredAt }
+          : s,
+      ),
+    },
+  )
 }
 
 const createDependency = (
@@ -665,6 +714,38 @@ const updateAvailability = (
   )
 }
 
+const updatePolicy = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'update-policy' }>,
+): CommandResult => {
+  const allowedPresets: PolicyPreset[] = ['balanced', 'focus', 'deadline']
+  if (!allowedPresets.includes(command.policy.preset)) {
+    return invalidCommand('Policy preset must be balanced, focus, or deadline.')
+  }
+  if (
+    command.policy.maxDailyWorkMinutes !== undefined &&
+    (!Number.isInteger(command.policy.maxDailyWorkMinutes) ||
+      command.policy.maxDailyWorkMinutes < 30 ||
+      command.policy.maxDailyWorkMinutes > 1440)
+  ) {
+    return invalidCommand('Max daily work minutes must be an integer between 30 and 1440.')
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  return revised(
+    document,
+    command,
+    'policy-updated',
+    `Updated planning policy to ${command.policy.preset}.`,
+    {
+      policy: command.policy,
+    },
+  )
+}
+
 const revised = (
   document: PlannerDocument,
   command: CommandMetadata,
@@ -673,7 +754,7 @@ const revised = (
   changes: Partial<
     Pick<
       PlannerDocument,
-      'projects' | 'tasks' | 'dependencies' | 'availability' | 'fixedEvents' | 'taskSessions'
+      'projects' | 'tasks' | 'dependencies' | 'availability' | 'policy' | 'fixedEvents' | 'taskSessions'
     >
   >,
   snapshot?: string,

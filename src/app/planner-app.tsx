@@ -128,6 +128,9 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           onDeleteFixedEvent={planner.deleteFixedEvent}
           onDeleteTaskSession={planner.deleteTaskSession}
           onScheduleTaskSession={planner.createTaskSession}
+          onToggleSessionLock={planner.toggleSessionLock}
+          onUpdatePolicy={planner.updatePolicy}
+          policy={planner.document.policy}
           referenceDate={referenceDate}
           risks={planner.risks}
           selectedTaskId={selectedTaskId}

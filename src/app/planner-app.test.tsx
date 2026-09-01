@@ -89,10 +89,10 @@ describe('PlannerApp', () => {
     expect(screen.getByRole('heading', { name: /schedule at 10:00/i })).toBeVisible()
 
     // Confirm scheduling task session
-    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await user.click(screen.getByRole('button', { name: 'Schedule' }))
 
     // Calendar now displays the session
-    expect(screen.getByText('Session')).toBeVisible()
+    expect(screen.getByText('🔒 Pinned')).toBeVisible()
     expect(screen.getAllByText('Read paper')).toHaveLength(2)
 
     // Task panel displays 1 scheduled badge
@@ -213,5 +213,49 @@ describe('PlannerApp', () => {
     await user.click(undoBtn)
 
     expect(screen.getByRole('status')).toHaveTextContent(/Reverted to previous schedule/i)
+  })
+
+  it('allows changing planning policy preset and pinning sessions', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Course')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Create task
+    const taskInput = screen.getByPlaceholderText('Add a task')
+    await user.type(taskInput, 'Lecture 1{enter}')
+
+    // Change policy
+    const policySelect = screen.getByLabelText(/planning mode/i)
+    await user.selectOptions(policySelect, 'focus')
+    expect(screen.getByRole('status')).toHaveTextContent(/Planning mode set to focus/i)
+
+    // Schedule a manual session
+    const slotBtn = screen.getByRole('button', { name: /schedule at 10:00 on tue 1/i })
+    await user.click(slotBtn)
+    await user.click(screen.getByRole('button', { name: 'Schedule' }))
+
+    // Manual session should be pinned
+    expect(screen.getByText('🔒 Pinned')).toBeVisible()
+
+    // Toggle pin
+    const pinBtn = screen.getByRole('button', { name: /unpin session for Lecture 1/i })
+    await user.click(pinBtn)
+    expect(screen.getByRole('status')).toHaveTextContent(/Session pinned state updated/i)
   })
 })
