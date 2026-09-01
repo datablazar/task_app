@@ -358,7 +358,7 @@ textarea {
 
 .button--primary {
   background: var(--brand-primary);
-  color: #ffffff;
+  color: var(--text-inverse);
   border-color: var(--brand-primary);
   box-shadow: 0 2px 6px var(--brand-glow), var(--specular-glow);
 }
@@ -599,7 +599,7 @@ textarea {
 
 .app-rail__btn.is-active {
   background: var(--brand-primary);
-  color: #ffffff;
+  color: var(--text-inverse);
   box-shadow: var(--shadow-dock);
 }
 
@@ -746,7 +746,7 @@ textarea {
 
 .project-item.is-active .project-item__count {
   background: var(--brand-primary);
-  color: #ffffff;
+  color: var(--text-inverse);
 }
 
 .project-form {
@@ -1656,20 +1656,6 @@ textarea {
     position: static;
     width: auto;
     height: auto;
-  }
-
-  /* Restore the original Projects -> Calendar -> Tasks reading order
-     regardless of DOM position (the rail moved Calendar earlier in markup). */
-  .project-panel {
-    order: 1;
-  }
-
-  .calendar-panel {
-    order: 2;
-  }
-
-  .task-panel {
-    order: 3;
   }
 
   .calendar-grid {

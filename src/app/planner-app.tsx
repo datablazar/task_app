@@ -280,6 +280,16 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           </button>
         </nav>
 
+        {showProjectsPanel ? (
+          <ProjectPanel
+            onCreateProject={createProject}
+            onSelectProject={selectProject}
+            projects={planner.document.projects}
+            selectedProjectId={activeSelectedProjectId}
+            taskCountByProject={taskCountByProject}
+          />
+        ) : null}
+
         <CalendarPreview
           fixedEvents={planner.document.fixedEvents}
           hasOverdueSessions={planner.hasOverdueSessions}
@@ -300,16 +310,6 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           taskSessions={planner.document.taskSessions}
           tasks={planner.document.tasks}
         />
-
-        {showProjectsPanel ? (
-          <ProjectPanel
-            onCreateProject={createProject}
-            onSelectProject={selectProject}
-            projects={planner.document.projects}
-            selectedProjectId={activeSelectedProjectId}
-            taskCountByProject={taskCountByProject}
-          />
-        ) : null}
 
         {showTasksPanel ? (
           <TaskPanel

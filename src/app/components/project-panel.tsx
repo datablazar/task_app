@@ -20,12 +20,20 @@ export const ProjectPanel = ({
   const [isCreating, setIsCreating] = useState(false)
   const [title, setTitle] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     if (isCreating) {
       inputRef.current?.focus()
     }
   }, [isCreating])
+
+  // This panel mounts fresh each time it pops open, so focusing on mount
+  // moves keyboard focus straight into it instead of leaving it on the
+  // rail toggle button that opened it.
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -38,7 +46,9 @@ export const ProjectPanel = ({
   return (
     <aside className="project-panel" aria-labelledby="projects-heading">
       <div className="project-panel__header">
-        <h2 id="projects-heading">Projects</h2>
+        <h2 id="projects-heading" ref={headingRef} tabIndex={-1}>
+          Projects
+        </h2>
         <span className="project-panel__badge">{projects.length}</span>
       </div>
       <nav aria-label="Your projects">

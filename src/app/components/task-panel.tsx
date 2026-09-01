@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BackupControls } from './backup-controls'
 import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
 
@@ -44,6 +44,14 @@ export const TaskPanel = ({
   const [title, setTitle] = useState('')
   const [activeSubtaskParentId, setActiveSubtaskParentId] = useState<string | null>(null)
   const [subtaskTitle, setSubtaskTitle] = useState('')
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // This panel mounts fresh each time it pops open, so focusing on mount
+  // moves keyboard focus straight into it instead of leaving it on the
+  // rail toggle button that opened it.
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
 
   // Constraint editing state
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
@@ -319,7 +327,9 @@ export const TaskPanel = ({
     <aside className="task-panel" aria-labelledby="selected-project-heading">
       {project ? (
         <>
-          <h2 id="selected-project-heading">{project.title}</h2>
+          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
+            {project.title}
+          </h2>
           <section aria-labelledby="tasks-heading" className="tasks-section">
             <div className="tasks-section__header">
               <h3 id="tasks-heading">Tasks</h3>
@@ -404,7 +414,9 @@ export const TaskPanel = ({
         </>
       ) : (
         <div className="no-project-selected">
-          <h2 id="selected-project-heading">Start with a project</h2>
+          <h2 id="selected-project-heading" ref={headingRef} tabIndex={-1}>
+            Start with a project
+          </h2>
           <p>Create a project, then add its first task here.</p>
         </div>
       )}
