@@ -50,11 +50,14 @@ export const ProjectPanel = ({
               <li key={project.id}>
                 <button
                   aria-current={isSelected ? 'page' : undefined}
-                  className={isSelected ? 'project-item is-selected' : 'project-item'}
+                  className={isSelected ? 'project-item is-active is-selected' : 'project-item'}
                   onClick={() => onSelectProject(project.id)}
                   type="button"
                 >
-                  <span className="project-item__title">{project.title}</span>
+                  <span className="project-item__name">
+                    <span aria-hidden="true" style={{ opacity: 0.7, marginRight: 6 }}>📁</span>
+                    {project.title}
+                  </span>
                   <span className="project-item__count">{count}</span>
                 </button>
               </li>

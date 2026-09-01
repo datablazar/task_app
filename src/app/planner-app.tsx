@@ -32,6 +32,27 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [referenceDate] = useState(() => now?.() ?? new Date())
 
+  // Theme State: 'light' (Editorial Alabaster) vs 'dark' (Obsidian Smoked Glass)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('pa_planner_theme')
+      if (saved === 'dark' || saved === 'light') return saved
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    } catch {
+      return 'light'
+    }
+  })
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'light' ? 'dark' : 'light'
+    setTheme(nextTheme)
+    try {
+      localStorage.setItem('pa_planner_theme', nextTheme)
+    } catch {
+      // ignore
+    }
+  }
+
   // AI Modal States
   const [activeAiTask, setActiveAiTask] = useState<Task | null>(null)
   const [activeInterpretation, setActiveInterpretation] = useState<TaskInterpretationResult | null>(null)
@@ -97,7 +118,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         : '⚡ AI: Local Rules'
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <header className="app-header">
         <div className="app-header__identity">
           <div className="brand-lockup">
@@ -141,7 +162,19 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
             {providerLabel}
           </button>
         </div>
-        <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
+
+        <div className="backup-actions">
+          <button
+            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            type="button"
+          >
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
+          <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
+        </div>
       </header>
 
       <QuickCaptureBar
