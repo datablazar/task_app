@@ -16,6 +16,12 @@ class MemoryStorage implements StorageLike {
   }
 }
 
+// The Projects panel is a pop-out that starts closed on desktop; every
+// test needs it open before it can create a project or see its tasks.
+const openProjectsPanel = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('button', { name: 'Toggle Projects panel' }))
+}
+
 describe('PlannerApp', () => {
   it('supports the keyboard path from a new project to a completed task', async () => {
     const user = userEvent.setup()
@@ -33,6 +39,7 @@ describe('PlannerApp', () => {
       />,
     )
 
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     await user.type(screen.getByLabelText('Project name'), 'Prepare autumn course')
     await user.keyboard('{Enter}')
@@ -69,6 +76,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     await user.type(screen.getByLabelText('Project name'), 'Research Course')
     await user.keyboard('{Enter}')
@@ -121,6 +129,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     await user.type(screen.getByLabelText('Project name'), 'Thesis Writing')
     await user.keyboard('{Enter}')
@@ -177,6 +186,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     const projectInput = screen.getByPlaceholderText('Project name')
     await user.type(projectInput, 'App Redesign')
@@ -231,6 +241,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     const projectInput = screen.getByPlaceholderText('Project name')
     await user.type(projectInput, 'Course')
@@ -275,6 +286,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     const projectInput = screen.getByPlaceholderText('Project name')
     await user.type(projectInput, 'Podcast Launch')
@@ -327,6 +339,7 @@ describe('PlannerApp', () => {
     )
 
     // Create project
+    await openProjectsPanel(user)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     const projectInput = screen.getByPlaceholderText('Project name')
     await user.type(projectInput, 'Sprint 1')
