@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { parseQuickTaskInput } from '../../domain/interpretation/nlp-parser'
 import type { Project } from '../../domain/model'
+
+export interface QuickCaptureHandle {
+  focus: () => void
+}
 
 interface QuickCaptureBarProps {
   projects: Project[]
@@ -9,92 +13,85 @@ interface QuickCaptureBarProps {
   onCreateQuickTask: (input: string, fallbackProjectId?: string) => boolean
 }
 
-export const QuickCaptureBar = ({
-  projects,
-  selectedProjectId,
-  onCreateQuickTask,
-}: QuickCaptureBarProps) => {
-  const [input, setInput] = useState('')
-  const [overrideProjectId, setOverrideProjectId] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+export const QuickCaptureBar = forwardRef<QuickCaptureHandle, QuickCaptureBarProps>(
+  ({ projects, selectedProjectId, onCreateQuickTask }, ref) => {
+    const [input, setInput] = useState('')
+    const [isFocused, setIsFocused] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
 
-  const effectiveProjectId = overrideProjectId ?? selectedProjectId ?? projects[0]?.id ?? ''
-
-  // Global keyboard shortcut: Cmd+K or Ctrl+K to focus quick capture
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
+    useImperativeHandle(ref, () => ({
+      focus: () => {
         inputRef.current?.focus()
+      },
+    }))
+
+    const effectiveProjectId = selectedProjectId ?? projects[0]?.id ?? ''
+
+    // Global keyboard shortcut: Cmd+K or Ctrl+K to focus quick capture
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault()
+          inputRef.current?.focus()
+        }
+      }
+      window.addEventListener('keydown', handleKeyDown)
+      return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
+
+    const parsed = useMemo(() => {
+      if (!input.trim()) return null
+      return parseQuickTaskInput(input, projects)
+    }, [input, projects])
+
+    const handleSubmit = (e: FormEvent) => {
+      e.preventDefault()
+      if (!input.trim()) return
+
+      if (onCreateQuickTask(input.trim(), effectiveProjectId)) {
+        setInput('')
+        inputRef.current?.blur()
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
 
-  const parsed = useMemo(() => {
-    if (!input.trim()) return null
-    return parseQuickTaskInput(input, projects)
-  }, [input, projects])
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (!input.trim()) return
-
-    if (onCreateQuickTask(input, effectiveProjectId)) {
-      setInput('')
-    }
-  }
-
-  return (
-    <section className="quick-capture-container" aria-label="Quick Task Capture">
-      <form className="quick-capture-form" onSubmit={handleSubmit}>
-        <div className="quick-capture-input-wrapper">
-          <span className="quick-capture-icon" aria-hidden="true">⚡</span>
+    return (
+      <div className={`header-quick-capture ${isFocused ? 'is-focused' : ''}`}>
+        <form className="header-quick-capture__form" onSubmit={handleSubmit}>
+          <span aria-hidden="true" className="header-quick-capture__plus">
+            +
+          </span>
           <input
-            ref={inputRef}
-            className="quick-capture-input"
+            aria-label="Capture a task or note"
+            className="header-quick-capture__input"
+            onBlur={() => setIsFocused(false)}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Quick capture: 'Review paper 90m by Friday #Research' (or ⌘K)"
+            onFocus={() => setIsFocused(true)}
+            placeholder="Capture a task or note... (Quick capture: 'Review paper 90m')"
+            ref={inputRef}
             type="text"
             value={input}
           />
-          <div className="quick-capture-controls">
-            {projects.length > 0 ? (
-              <select
-                aria-label="Target project"
-                className="quick-capture-project-select"
-                onChange={(e) => setOverrideProjectId(e.target.value)}
-                value={effectiveProjectId}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    📁 {p.title}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            <button
-              className="button button--primary button--small quick-capture-submit"
-              disabled={!input.trim()}
-              type="submit"
-            >
-              Add Task
-            </button>
-          </div>
-        </div>
+          <button className="visually-hidden" type="submit">
+            Add Task
+          </button>
+        </form>
 
         {parsed && parsed.matchedTokens.length > 0 ? (
-          <div className="quick-capture-pills">
-            <span className="quick-capture-pills__label">Detected:</span>
+          <div className="header-quick-capture__popup">
+            <span className="header-quick-capture__detected-label">Detected:</span>
             {parsed.matchedTokens.map((token, i) => (
-              <span className={`quick-capture-pill quick-capture-pill--${token.kind}`} key={i}>
+              <span
+                className={`quick-capture-pill quick-capture-pill--${token.kind}`}
+                key={i}
+              >
                 {token.label}
               </span>
             ))}
           </div>
         ) : null}
-      </form>
-    </section>
-  )
-}
+      </div>
+    )
+  },
+)
+
+QuickCaptureBar.displayName = 'QuickCaptureBar'

@@ -48,6 +48,7 @@ export type PlannerCommand =
       estimateMinutes?: number
       dueAt?: string
       earliestStartAt?: string
+      notes?: string
     })
   | (CommandMetadata & {
       type: 'set-task-completion'
@@ -349,6 +350,7 @@ const updateTaskConstraints = (
     dueAt: command.dueAt !== undefined ? command.dueAt : task.dueAt,
     earliestStartAt:
       command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt,
+    notes: command.notes !== undefined ? command.notes : task.notes,
     updatedAt: command.occurredAt,
   }
 

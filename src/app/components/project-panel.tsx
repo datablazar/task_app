@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import type { Project } from '../../domain/model'
 
 interface ProjectPanelProps {
+  isOpen?: boolean
+  onClose?: () => void
   onCreateProject: (title: string) => boolean
   onSelectProject: (projectId: string) => void
   projects: Project[]
@@ -10,7 +12,11 @@ interface ProjectPanelProps {
   taskCountByProject?: Map<string, number>
 }
 
+const DEFAULT_COLORS = ['#e0533c', '#3b7a57', '#8b5cf6', '#d97706', '#2563eb', '#db2777']
+
 export const ProjectPanel = ({
+  isOpen = true,
+  onClose,
   onCreateProject,
   onSelectProject,
   projects,
@@ -29,36 +35,58 @@ export const ProjectPanel = ({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (onCreateProject(title)) {
+    if (onCreateProject(title.trim())) {
       setTitle('')
       setIsCreating(false)
     }
   }
 
+  if (!isOpen) {
+    return null
+  }
+
   return (
-    <aside className="project-panel" aria-labelledby="projects-heading">
-      <div className="project-panel__header">
-        <h2 id="projects-heading">Projects</h2>
-        <span className="project-panel__badge">{projects.length}</span>
+    <aside aria-labelledby="projects-heading" className="projects-drawer">
+      <div className="projects-drawer__header">
+        <h2 className="projects-drawer__title" id="projects-heading">
+          Projects
+        </h2>
+        {onClose ? (
+          <button
+            aria-label="Close projects drawer"
+            className="projects-drawer__close-btn"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        ) : null}
       </div>
-      <nav aria-label="Your projects">
-        <ul className="project-list">
-          {projects.map((project) => {
+
+      <nav aria-label="Your projects" className="projects-drawer__nav">
+        <ul className="projects-drawer__list">
+          {projects.map((project, index) => {
             const count = taskCountByProject?.get(project.id) ?? 0
             const isSelected = project.id === selectedProjectId
+            const dotColor = project.color ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length]
+
             return (
               <li key={project.id}>
                 <button
                   aria-current={isSelected ? 'page' : undefined}
-                  className={isSelected ? 'project-item is-active is-selected' : 'project-item'}
+                  className={`projects-drawer__item ${isSelected ? 'is-active is-selected' : ''}`}
                   onClick={() => onSelectProject(project.id)}
                   type="button"
                 >
-                  <span className="project-item__name">
-                    <span aria-hidden="true" style={{ opacity: 0.7, marginRight: 6 }}>📁</span>
-                    {project.title}
-                  </span>
-                  <span className="project-item__count">{count}</span>
+                  <div className="projects-drawer__item-left">
+                    <span
+                      aria-hidden="true"
+                      className="projects-drawer__item-dot"
+                      style={{ backgroundColor: dotColor }}
+                    />
+                    <span className="projects-drawer__item-title">{project.title}</span>
+                  </div>
+                  <span className="projects-drawer__item-count">{count}</span>
                 </button>
               </li>
             )
@@ -67,7 +95,7 @@ export const ProjectPanel = ({
       </nav>
 
       {isCreating ? (
-        <form className="project-form" onSubmit={submit}>
+        <form className="projects-drawer__form" onSubmit={submit}>
           <label className="visually-hidden" htmlFor="new-project-title">
             Project name
           </label>
@@ -79,8 +107,12 @@ export const ProjectPanel = ({
             ref={inputRef}
             value={title}
           />
-          <div className="project-form__actions">
-            <button className="text-button" type="button" onClick={() => setIsCreating(false)}>
+          <div className="projects-drawer__form-actions">
+            <button
+              className="text-button text-button--small"
+              onClick={() => setIsCreating(false)}
+              type="button"
+            >
               Cancel
             </button>
             <button className="button button--primary button--small" type="submit">
@@ -88,18 +120,18 @@ export const ProjectPanel = ({
             </button>
           </div>
         </form>
-      ) : null}
-
-      <button
-        className="new-project-button"
-        onClick={() => setIsCreating(true)}
-        type="button"
-      >
-        <span aria-hidden="true" className="new-project-button__icon">
-          +
-        </span>
-        New project
-      </button>
+      ) : (
+        <button
+          className="projects-drawer__new-btn"
+          onClick={() => setIsCreating(true)}
+          type="button"
+        >
+          <span aria-hidden="true" className="projects-drawer__new-icon">
+            +
+          </span>
+          New project
+        </button>
+      )}
     </aside>
   )
 }

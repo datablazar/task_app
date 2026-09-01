@@ -268,11 +268,14 @@ const parseProjects = (
   for (const item of candidate) {
     if (
       !isRecord(item) ||
-      !hasOnlyKeys(item, ['id', 'title', 'createdAt', 'updatedAt']) ||
+      !hasOnlyKeys(item, ['id', 'title', 'color', 'createdAt', 'updatedAt']) ||
       !isIdentifier(item.id) ||
       !isTitle(item.title)
     ) {
       return invalidBackup('Every project needs a stable ID and a valid title.')
+    }
+    if (item.color !== undefined && (typeof item.color !== 'string' || item.color.length > 50)) {
+      return invalidBackup('Project color must be a valid color string.')
     }
     if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
       return invalidBackup('Every project needs UTC creation and update timestamps.')
@@ -281,12 +284,14 @@ const parseProjects = (
       return invalidBackup('Project IDs must be unique.')
     }
     identifiers.add(item.id)
-    projects.push({
+    const project: Project = {
       id: item.id,
       title: item.title,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-    })
+    }
+    if (typeof item.color === 'string') project.color = item.color
+    projects.push(project)
   }
   return success(projects)
 }
@@ -314,6 +319,7 @@ const parseTasks = (
         'estimateMinutes',
         'dueAt',
         'earliestStartAt',
+        'notes',
         'createdAt',
         'updatedAt',
       ]) ||
@@ -323,6 +329,9 @@ const parseTasks = (
       typeof item.completed !== 'boolean'
     ) {
       return invalidBackup('Every task needs valid IDs, a title and a completion state.')
+    }
+    if (item.notes !== undefined && (typeof item.notes !== 'string' || item.notes.length > 5000)) {
+      return invalidBackup('Task notes must be a string up to 5000 characters.')
     }
     if (!projectIds.has(item.projectId)) {
       return invalidBackup('Every task must belong to an imported project.')
@@ -372,6 +381,7 @@ const parseTasks = (
     if (typeof item.estimateMinutes === 'number') task.estimateMinutes = item.estimateMinutes
     if (typeof item.dueAt === 'string') task.dueAt = item.dueAt
     if (typeof item.earliestStartAt === 'string') task.earliestStartAt = item.earliestStartAt
+    if (typeof item.notes === 'string') task.notes = item.notes
 
     tasks.push(task)
   }

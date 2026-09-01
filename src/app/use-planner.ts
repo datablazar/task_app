@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createEmptyPlannerDocument } from '../domain/model'
+import { createMockupSeedDocument } from '../domain/seed-data'
 import { createStableId } from './ids'
 import { generateReferencePlan, repairSchedule } from '../domain/planner-engine'
 import { defaultInterpretationService } from '../domain/interpretation'
@@ -27,6 +28,7 @@ interface UsePlannerOptions {
   workspace: PlannerWorkspace
   createId?: () => string
   now?: () => Date
+  seedInitial?: boolean
 }
 
 const getLocalTimeZone = (): string =>
@@ -39,6 +41,7 @@ export const usePlanner = ({
   workspace,
   createId = createStableId,
   now = () => new Date(),
+  seedInitial = false,
 }: UsePlannerOptions) => {
   const initial = useMemo(() => {
     const loaded = workspace.load()
@@ -48,11 +51,14 @@ export const usePlanner = ({
         notice: { tone: 'error' as const, message: loaded.error.message },
       }
     }
+    const defaultDoc = seedInitial
+      ? createMockupSeedDocument(getLocalTimeZone(), now())
+      : createEmptyPlannerDocument(getLocalTimeZone())
     return {
-      document: loaded.value ?? createEmptyPlannerDocument(getLocalTimeZone()),
+      document: loaded.value ?? defaultDoc,
       notice: { tone: 'success' as const, message: 'Saved locally.' },
     }
-  }, [workspace])
+  }, [now, seedInitial, workspace])
 
   const [document, setDocument] = useState<PlannerDocument>(initial.document)
   const [notice, setNotice] = useState<PlannerNotice>(initial.notice)
@@ -163,6 +169,7 @@ export const usePlanner = ({
         estimateMinutes?: number
         dueAt?: string
         earliestStartAt?: string
+        notes?: string
       },
     ): boolean => {
       const result = workspace.execute(document, {

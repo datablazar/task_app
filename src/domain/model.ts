@@ -37,6 +37,7 @@ export const DEFAULT_POLICY: PlanningPolicy = {
 export interface Project {
   id: string
   title: string
+  color?: string
   createdAt: string
   updatedAt: string
 }
@@ -50,6 +51,7 @@ export interface Task {
   estimateMinutes?: number
   dueAt?: string
   earliestStartAt?: string
+  notes?: string
   createdAt: string
   updatedAt: string
 }
