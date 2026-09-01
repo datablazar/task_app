@@ -1,6 +1,6 @@
 # 0002: Local-first storage
 
-Status: Accepted  
+Status: Accepted
 Date: 2026-08-31
 
 ## Context

@@ -1,6 +1,6 @@
 # 0005: Standard calendar component
 
-Status: Accepted  
+Status: Accepted
 Date: 2026-08-31
 
 ## Context

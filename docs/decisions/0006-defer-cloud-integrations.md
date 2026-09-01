@@ -1,6 +1,6 @@
 # 0006: Defer cloud and integrations
 
-Status: Accepted  
+Status: Accepted
 Date: 2026-08-31
 
 ## Context

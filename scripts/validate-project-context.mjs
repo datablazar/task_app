@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const required = [
-  'PROJECT_CONTEXT.md', 'AGENTS.md', 'CLAUDE.md', 'GEMINI.md',
+  'PROJECT_CONTEXT.md', 'AGENTS.md',
   'CONTRIBUTING.md', 'docs/decisions/README.md',
 ];
 const errors = [];

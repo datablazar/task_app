@@ -1,7 +1,9 @@
 # 0001: Deterministic scheduler; bounded LLM proposals
 
-Status: Accepted  
+Status: Accepted
 Date: 2026-08-31
+
+Inference-specific wording is superseded by [0007](0007-model-agnostic-intelligence.md); the deterministic scheduler decision remains accepted.
 
 ## Context
 

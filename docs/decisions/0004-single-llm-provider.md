@@ -1,6 +1,6 @@
 # 0004: One evaluated LLM provider first
 
-Status: Accepted  
+Status: Superseded by [0007](0007-model-agnostic-intelligence.md)
 Date: 2026-08-31
 
 ## Context

@@ -1,6 +1,6 @@
 # 0003: Modular monolith
 
-Status: Accepted  
+Status: Accepted
 Date: 2026-08-31
 
 ## Context
