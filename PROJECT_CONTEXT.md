@@ -163,6 +163,8 @@ One issue/owner/branch; tests+evidence; different agent reviews; owner resolves;
 
 ## 11 Roadmap
 
+Detailed execution plan: [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+
 | ID | Deliverable / gate | Status |
 |---|---|---|
 | I0 | Skeleton, domain, IndexedDB/migrations, backup, tests; create/persist/export/restore project+task; one-command run | TODO |
@@ -178,13 +180,13 @@ One issue/owner/branch; tests+evidence; different agent reviews; owner resolves;
 
 ## 12 Current state
 
-Repo=`datablazar/task_app`; branch=`main`; initial remote base=`f9e8eb2`. Node 24.20.0 and npm 11.19.0 verified via NVM on Apple Silicon; repository-native context, ADR, agent and CI protocols exist; no app/package/tests. Active=`I0`; blocker=none. Next `I0-bootstrap`: initialise minimal React/Vite/TS/npm+tests; establish domain/storage boundaries; implement create-persist-export-import vertical slice; avoid unnecessary dependencies.
+Repo=`datablazar/task_app`; branch=`main`; initial remote base=`f9e8eb2`. Node 24.20.0 and npm 11.19.0 verified via NVM on Apple Silicon; repository-native context, ADR, CI and detailed development-plan documents exist; no app/package/tests. Active=`I0`; blocker=none. Next `I0-bootstrap`: initialise minimal React/Vite/TS/npm+tests; establish domain/storage boundaries; implement create-persist-export-import vertical slice; avoid unnecessary dependencies.
 
 ## 13 Hand-off (max 3; newest first)
 
+- 2026-09-01|Added staged development plan to repository documentation|`docs/DEVELOPMENT_PLAN.md`|I0-bootstrap
 - 2026-09-01|Removed named integration references from the repository system|context,ADRs,validator|I0-bootstrap
 - 2026-08-31|Standardised local/CI runtime on Node 24.20.0+NVM+npm|`.nvmrc`,workflow,context|I0-bootstrap
-- 2026-08-31|Added self-enforcing Git/agent context protocol|agent files,CI validator,ADRs|I0-bootstrap
 
 ## 14 Decisions
 
