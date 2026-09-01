@@ -1,22 +1,7 @@
 # Personal Assistant Planner
 
-A local-first task and calendar application that automatically builds and repairs a realistic schedule. Deterministic rules enforce constraints; optional, capability-selected inference handles bounded ambiguity.
+A local-first planner that turns projects and tasks into an explainable, repairable calendar around real constraints.
 
-## Start here
+For any project work, start with the portable [project packet](PROJECT.md). It contains the current product contract, delivery map, active state, decision rationale and update rule; then follow [the repository protocol](AGENTS.md).
 
-- [Canonical project context](PROJECT_CONTEXT.md): current goals, contracts, roadmap, status and next task.
-- [Development plan](docs/DEVELOPMENT_PLAN.md): living build sequence, completion gates and review record.
-- [Decision records](docs/decisions/README.md): durable architectural reasoning.
-- [Repository protocol](AGENTS.md): instructions for any coding assistant.
-- [Contribution protocol](CONTRIBUTING.md): required implementation, documentation and verification workflow.
-
-Current phase: **I0 — foundation**. No application code has been implemented yet.
-
-Repository checks automatically validate the context structure and require implementation-bearing pull requests to update the project state packet.
-
-## Prerequisites
-
-- NVM with Node.js 24.20.0 (`nvm install && nvm use`).
-- npm 11 or the compatible npm bundled with Node 24.
-
-This repository uses npm only. Commit `package-lock.json`; do not add `pnpm-lock.yaml` or `yarn.lock`.
+The repository is intentionally documentation-first while I0 is bootstrapped. Use the Node version pinned in [.nvmrc](.nvmrc); application checks and CI will be introduced with real application code.
