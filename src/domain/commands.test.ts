@@ -606,4 +606,178 @@ describe('executeCommand', () => {
       },
     })
   })
+
+  it('updates task priority, deadlineType, labels, and description with validation', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    if (!p1.ok) throw new Error()
+
+    const t1 = executeCommand(p1.value.document, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Main Task',
+    })
+    if (!t1.ok) throw new Error()
+
+    // Valid metadata update
+    const updated = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-3',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      priority: 'ASAP',
+      deadlineType: 'HARD',
+      description: 'Critical launch blocker',
+      labels: ['release', 'frontend'],
+      dueAt: '2026-09-02T18:00:00.000Z',
+    })
+
+    expect(updated).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          tasks: [
+            {
+              id: 'task-1',
+              priority: 'ASAP',
+              deadlineType: 'HARD',
+              description: 'Critical launch blocker',
+              labels: ['release', 'frontend'],
+            },
+          ],
+        },
+      },
+    })
+
+    // Invalid priority
+    const badPriority = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      priority: 'INVALID' as any,
+    })
+    expect(badPriority).toEqual({
+      ok: false,
+      error: { code: 'invalid-command', message: 'Priority must be ASAP, HIGH, MEDIUM, or LOW.' },
+    })
+
+    // Invalid deadline type
+    const badDeadlineType = executeCommand(t1.value.document, {
+      type: 'update-task-constraints',
+      id: 'task-1',
+      revisionId: 'rev-4',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      deadlineType: 'INVALID' as any,
+    })
+    expect(badDeadlineType).toEqual({
+      ok: false,
+      error: { code: 'invalid-command', message: 'Deadline type must be HARD, SOFT, or NONE.' },
+    })
+  })
+
+  it('moves a task and its child subtasks to another project', () => {
+    const empty = createEmptyPlannerDocument()
+    const p1 = executeCommand(empty, {
+      type: 'create-project',
+      id: 'proj-1',
+      revisionId: 'rev-1',
+      occurredAt: firstMoment,
+      title: 'Project 1',
+    })
+    if (!p1.ok) throw new Error()
+
+    const p2 = executeCommand(p1.value.document, {
+      type: 'create-project',
+      id: 'proj-2',
+      revisionId: 'rev-2',
+      occurredAt: firstMoment,
+      title: 'Project 2',
+    })
+    if (!p2.ok) throw new Error()
+
+    const t1 = executeCommand(p2.value.document, {
+      type: 'create-task',
+      id: 'task-1',
+      revisionId: 'rev-3',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      title: 'Task in P1',
+    })
+    if (!t1.ok) throw new Error()
+
+    const sub1 = executeCommand(t1.value.document, {
+      type: 'create-subtask',
+      id: 'subtask-1',
+      revisionId: 'rev-4',
+      occurredAt: firstMoment,
+      projectId: 'proj-1',
+      parentTaskId: 'task-1',
+      title: 'Subtask of Task 1',
+    })
+    if (!sub1.ok) throw new Error()
+
+    // Move task-1 to proj-2
+    const moved = executeCommand(sub1.value.document, {
+      type: 'move-task',
+      id: 'move-1',
+      revisionId: 'rev-5',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      targetProjectId: 'proj-2',
+    })
+
+    expect(moved).toMatchObject({
+      ok: true,
+      value: {
+        document: {
+          tasks: [
+            { id: 'task-1', projectId: 'proj-2' },
+            { id: 'subtask-1', projectId: 'proj-2', parentTaskId: 'task-1' },
+          ],
+        },
+        revision: { number: 5, kind: 'task-moved' },
+      },
+    })
+
+    // Error on same project
+    const sameProj = executeCommand(sub1.value.document, {
+      type: 'move-task',
+      id: 'move-2',
+      revisionId: 'rev-6',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      targetProjectId: 'proj-1',
+    })
+    expect(sameProj).toEqual({
+      ok: false,
+      error: { code: 'invalid-command', message: 'Task is already in the target project.' },
+    })
+
+    // Error on missing target project
+    const missingProj = executeCommand(sub1.value.document, {
+      type: 'move-task',
+      id: 'move-3',
+      revisionId: 'rev-6',
+      occurredAt: secondMoment,
+      taskId: 'task-1',
+      targetProjectId: 'ghost-project',
+    })
+    expect(missingProj).toEqual({
+      ok: false,
+      error: { code: 'project-not-found', message: 'The target project does not exist.' },
+    })
+  })
 })

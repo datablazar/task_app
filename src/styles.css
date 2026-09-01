@@ -546,6 +546,30 @@ textarea {
   border: 1px solid var(--sage-border);
 }
 
+.quick-capture-pill--priority {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.quick-capture-pill--label {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.quick-capture-pill--deadline-type {
+  background: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.quick-capture-pill--schedule {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
 /* --------------------------------------------------------------------------
    7. Full-Bleed Calendar Shell with Pop-Out Panels
    -------------------------------------------------------------------------- */
@@ -1326,6 +1350,62 @@ textarea {
   color: var(--text-secondary);
 }
 
+.task-priority-badge {
+  font-size: 0.70rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+}
+
+.task-priority-badge--asap {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.task-priority-badge--high {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+
+.task-priority-badge--medium {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+.task-priority-badge--low {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+}
+
+.task-deadline-badge--hard {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #f87171;
+  font-weight: 700;
+}
+
+.task-label-badge {
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--panel-bg-subtle);
+  border: 1px solid var(--border-glass-subtle);
+  color: var(--text-muted);
+}
+
+.task-description-preview {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  padding-left: 2px;
+  line-height: 1.3;
+}
+
 .task-dep-remove {
   background: transparent;
   border: none;
@@ -1707,3 +1787,160 @@ textarea {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   14. Schedule & Recurrence Modals
+   -------------------------------------------------------------------------- */
+.schedule-modal,
+.recurrence-modal {
+  max-width: 580px;
+  width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.schedule-modal-intro,
+.recurrence-modal-intro {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.schedule-cards,
+.recurrence-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.schedule-card,
+.recurrence-card {
+  padding: 0.85rem;
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg-subtle);
+  border: 1px solid var(--border-glass-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.schedule-card--default {
+  border-color: var(--brand-accent);
+  background: var(--bg-surface-elevated);
+}
+
+.schedule-card__header,
+.recurrence-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.schedule-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.schedule-card__title,
+.recurrence-card__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.recurrence-card__project {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.schedule-card__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.schedule-card__windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.schedule-window-chip {
+  font-size: 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-glass-subtle);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+}
+
+.day-toggle-group {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.day-toggle-btn {
+  flex: 1;
+  padding: 0.4rem 0;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-glass-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.day-toggle-btn--active {
+  background: var(--brand-primary);
+  color: var(--text-inverse);
+  border-color: var(--brand-primary);
+}
+
+.schedule-window-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.schedule-window-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--panel-bg-subtle);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.85rem;
+}
+
+.window-day-name {
+  font-weight: 700;
+  width: 45px;
+}
+
+.window-hour-label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.window-hour-input {
+  width: 55px !important;
+  padding: 2px 4px !important;
+  font-size: 0.85rem !important;
+  text-align: center;
+}
+
+.recurrence-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+

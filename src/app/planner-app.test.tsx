@@ -320,7 +320,7 @@ describe('PlannerApp', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     // Verify subtasks are visible in the task panel
-    expect(await screen.findByText(/Episode outline/i)).toBeVisible()
+    expect(await screen.findByText(/Pre-launch verification/i)).toBeVisible()
   })
 
   it('supports Quick Capture with live NLP parsing and view mode switcher', async () => {
@@ -376,5 +376,168 @@ describe('PlannerApp', () => {
     expect(screen.getByText(/No tasks match current filter/i)).toBeVisible()
     await user.clear(searchInput)
     expect(screen.getByText('Architecture review')).toBeVisible()
+  })
+
+  it('supports configuring priority, deadline strictness, labels, and moving tasks across projects', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create Project 1 (Client A)
+    await openProjectsPanel(user)
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Client A')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Create Project 2 (Client B)
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput2 = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput2, 'Client B')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Select Client A
+    await user.click(screen.getByRole('button', { name: /Client A/ }))
+
+    // Create task
+    const taskInput = screen.getByPlaceholderText('Add a task')
+    await user.type(taskInput, 'Deliver Financial Audit{enter}')
+    expect(screen.getByText('Deliver Financial Audit')).toBeVisible()
+
+    // Open Details / Constraints Modal
+    await user.click(screen.getByRole('button', { name: 'Edit constraints for Deliver Financial Audit' }))
+
+    // Set Priority to ASAP
+    const prioritySelect = screen.getByLabelText(/priority/i)
+    await user.selectOptions(prioritySelect, 'ASAP')
+
+    // Set Deadline strictness to HARD
+    const strictnessSelect = screen.getByLabelText(/deadline strictness/i)
+    await user.selectOptions(strictnessSelect, 'HARD')
+
+    // Set Labels
+    const labelsInput = screen.getByLabelText(/labels/i)
+    await user.type(labelsInput, 'audit, finance')
+
+    // Move to Client B
+    const projectSelect = screen.getByLabelText(/^project$/i)
+    await user.selectOptions(projectSelect, 'Client B')
+
+    // Save
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // Verify task is now in Client B
+    await user.click(screen.getByRole('button', { name: /Client B/ }))
+    expect(screen.getByText('Deliver Financial Audit')).toBeVisible()
+    expect(screen.getByText('🔥 ASAP')).toBeVisible()
+    expect(screen.getByText('#audit')).toBeVisible()
+    expect(screen.getByText('#finance')).toBeVisible()
+  })
+
+  it('supports managing availability schedules and assigning tasks to custom schedules', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Open Schedules Modal
+    await user.click(screen.getByRole('button', { name: /🗓 Schedules/i }))
+    expect(screen.getByRole('heading', { name: /Availability Schedules/i })).toBeVisible()
+    expect(screen.getByText('Work Hours')).toBeVisible()
+    expect(screen.getByText('Personal')).toBeVisible()
+
+    // Add new schedule
+    await user.click(screen.getByRole('button', { name: /\+ Add New Schedule/i }))
+    const nameInput = screen.getByPlaceholderText(/e\.g\. Deep Focus/i)
+    await user.type(nameInput, 'Night Owls')
+    await user.click(screen.getByRole('button', { name: /Save Schedule/i }))
+
+    expect(screen.getByText('Night Owls')).toBeVisible()
+
+    // Close modal
+    await user.click(screen.getByRole('button', { name: /Close modal/i }))
+
+    // Quick capture with @schedule
+    await openProjectsPanel(user)
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Night Studies')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    const quickInput = screen.getByPlaceholderText(/Quick capture/i)
+    await user.type(quickInput, 'Study Rust 60m @Night Owls')
+    expect(screen.getByText('🗓 Night Owls')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Add Task' }))
+
+    expect(screen.getByText('Study Rust')).toBeVisible()
+    expect(screen.getByText('🗓 Night Owls')).toBeVisible()
+  })
+
+  it('supports creating recurring task rules and pre-generating discrete task records', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create a project first
+    await openProjectsPanel(user)
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Operations')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Open Recurring Tasks Modal
+    await user.click(screen.getByRole('button', { name: /🔁 Recurring/i }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: /Recurring Tasks Engine/i })).toBeVisible()
+
+    // Click Add Recurring Task
+    await user.click(within(dialog).getByRole('button', { name: /\+ Add Recurring Task/i }))
+    const titleInput = within(dialog).getByPlaceholderText(/e\.g\. Weekly Status Report/i)
+    await user.type(titleInput, 'Weekly Architecture Review')
+
+    // Submit rule creation
+    await user.click(within(dialog).getByRole('button', { name: /Save & Pre-generate/i }))
+
+    // Modal should show the created rule card
+    expect(within(dialog).getByText('Weekly Architecture Review')).toBeVisible()
+    expect(within(dialog).getByText(/🔁 WEEKLY/i)).toBeVisible()
+
+    // Close modal
+    await user.click(within(dialog).getByRole('button', { name: /Close modal/i }))
+
+    // Select Operations project to verify recurring task instances exist
+    await user.click(screen.getByRole('button', { name: /Operations/ }))
+    const instances = screen.getAllByText('Weekly Architecture Review')
+    expect(instances.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('🔁 Recurring').length).toBeGreaterThanOrEqual(1)
   })
 })

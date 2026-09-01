@@ -223,4 +223,88 @@ describe('planner-engine', () => {
     // Rescheduled session must start at or after 14:00
     expect(Date.parse(repair.sessions[0].startAt)).toBeGreaterThanOrEqual(Date.parse(now))
   })
+
+  it('schedules higher priority tasks before lower priority tasks', () => {
+    const tasks: Task[] = [
+      {
+        id: 'task-low',
+        projectId: 'p1',
+        title: 'Low Priority Task',
+        completed: false,
+        priority: 'LOW',
+        estimateMinutes: 60,
+        createdAt: '2026-09-01T08:00:00.000Z',
+        updatedAt: '2026-09-01T08:00:00.000Z',
+      },
+      {
+        id: 'task-asap',
+        projectId: 'p1',
+        title: 'ASAP Priority Task',
+        completed: false,
+        priority: 'ASAP',
+        estimateMinutes: 60,
+        createdAt: '2026-09-01T08:30:00.000Z',
+        updatedAt: '2026-09-01T08:30:00.000Z',
+      },
+      {
+        id: 'task-high',
+        projectId: 'p1',
+        title: 'High Priority Task',
+        completed: false,
+        priority: 'HIGH',
+        estimateMinutes: 60,
+        createdAt: '2026-09-01T08:15:00.000Z',
+        updatedAt: '2026-09-01T08:15:00.000Z',
+      },
+    ]
+
+    const doc: PlannerDocument = { ...baseDocument, tasks }
+    const now = '2026-09-01T09:00:00.000Z'
+
+    const plan = generateReferencePlan(doc, { now })
+    expect(plan.success).toBe(true)
+    expect(plan.sessions).toHaveLength(3)
+
+    // ASAP should be scheduled first (09:00), High second (10:00), Low third (11:00)
+    expect(plan.sessions[0].taskId).toBe('task-asap')
+    expect(plan.sessions[1].taskId).toBe('task-high')
+    expect(plan.sessions[2].taskId).toBe('task-low')
+  })
+
+  it('prioritizes imminent HARD deadlines before soft deadlines', () => {
+    const tasks: Task[] = [
+      {
+        id: 'task-soft',
+        projectId: 'p1',
+        title: 'Soft deadline task',
+        completed: false,
+        priority: 'HIGH',
+        deadlineType: 'SOFT',
+        dueAt: '2026-09-03T17:00:00.000Z',
+        estimateMinutes: 60,
+        createdAt: '2026-09-01T08:00:00.000Z',
+        updatedAt: '2026-09-01T08:00:00.000Z',
+      },
+      {
+        id: 'task-hard',
+        projectId: 'p1',
+        title: 'Imminent hard deadline task',
+        completed: false,
+        priority: 'MEDIUM',
+        deadlineType: 'HARD',
+        dueAt: '2026-09-01T11:00:00.000Z', // Today 11am!
+        estimateMinutes: 60,
+        createdAt: '2026-09-01T08:30:00.000Z',
+        updatedAt: '2026-09-01T08:30:00.000Z',
+      },
+    ]
+
+    const doc: PlannerDocument = { ...baseDocument, tasks }
+    const now = '2026-09-01T09:00:00.000Z'
+
+    const plan = generateReferencePlan(doc, { now })
+    expect(plan.success).toBe(true)
+    expect(plan.sessions[0].taskId).toBe('task-hard')
+    expect(plan.sessions[1].taskId).toBe('task-soft')
+  })
 })

@@ -8,6 +8,8 @@ import { TaskPanel } from './components/task-panel'
 import { AiProposalDialog } from './components/ai-proposal-dialog'
 import { AiSettingsModal } from './components/ai-settings-modal'
 import { QuickCaptureBar } from './components/quick-capture-bar'
+import { ScheduleModal } from './components/schedule-modal'
+import { RecurrenceModal } from './components/recurrence-modal'
 import { usePlanner } from './use-planner'
 import type { StorageLike } from '../infrastructure/local-planner-repository'
 import type { Task } from '../domain/model'
@@ -129,10 +131,12 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     }
   }
 
-  // AI Modal States
+  // Modal States
   const [activeAiTask, setActiveAiTask] = useState<Task | null>(null)
   const [activeInterpretation, setActiveInterpretation] = useState<TaskInterpretationResult | null>(null)
   const [showAiSettings, setShowAiSettings] = useState(false)
+  const [showSchedulesModal, setShowSchedulesModal] = useState(false)
+  const [showRecurrenceModal, setShowRecurrenceModal] = useState(false)
 
   const selectedProject =
     planner.document.projects.find((project) => project.id === selectedProjectId) ??
@@ -232,6 +236,22 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
             </button>
           ) : null}
           <button
+            className="button button--secondary button--small"
+            onClick={() => setShowSchedulesModal(true)}
+            title="Manage Availability Schedules"
+            type="button"
+          >
+            🗓 Schedules
+          </button>
+          <button
+            className="button button--secondary button--small"
+            onClick={() => setShowRecurrenceModal(true)}
+            title="Manage Recurring Tasks"
+            type="button"
+          >
+            🔁 Recurring
+          </button>
+          <button
             className="button button--secondary button--small ai-mode-badge-btn"
             onClick={() => setShowAiSettings(true)}
             title="Configure AI Providers and API keys"
@@ -244,6 +264,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
         <QuickCaptureBar
           onCreateQuickTask={planner.createQuickTask}
           projects={planner.document.projects}
+          schedules={planner.document.schedules}
           selectedProjectId={activeSelectedProjectId}
         />
 
@@ -350,6 +371,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
 
         <TaskPanel
           focusToken={tasksFocusToken}
+          allProjects={planner.document.projects}
           dependencies={planner.document.dependencies}
           hidden={!showTasksPanel}
           onCreateDependency={planner.createDependency}
@@ -363,11 +385,36 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           onTriggerAi={handleTriggerAi}
           onUpdateTaskConstraints={planner.updateTaskConstraints}
           project={selectedProject}
+          schedules={planner.document.schedules}
           selectedTaskId={selectedTaskId}
           taskSessions={planner.document.taskSessions}
           tasks={selectedTasks}
         />
       </main>
+
+      {/* Availability Schedules Modal */}
+      <ScheduleModal
+        isOpen={showSchedulesModal}
+        onClose={() => setShowSchedulesModal(false)}
+        onCreateSchedule={planner.createSchedule}
+        onDeleteSchedule={planner.deleteSchedule}
+        onSetDefaultSchedule={planner.setDefaultSchedule}
+        onUpdateSchedule={planner.updateSchedule}
+        schedules={planner.document.schedules}
+      />
+
+      {/* Recurring Tasks Engine Modal */}
+      <RecurrenceModal
+        isOpen={showRecurrenceModal}
+        onClose={() => setShowRecurrenceModal(false)}
+        onCreateRule={planner.createRecurrenceRule}
+        onDeleteRule={planner.deleteRecurrenceRule}
+        onGenerateTasks={planner.generateRecurringTasks}
+        projects={planner.document.projects}
+        recurrenceRules={planner.document.recurrenceRules}
+        schedules={planner.document.schedules}
+        selectedProjectId={activeSelectedProjectId}
+      />
 
       {/* AI Proposal Modal */}
       {activeAiTask && activeInterpretation ? (

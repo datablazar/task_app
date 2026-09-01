@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { parseQuickTaskInput } from '../../domain/interpretation/nlp-parser'
-import type { Project } from '../../domain/model'
+import type { Project, Schedule } from '../../domain/model'
 
 interface QuickCaptureBarProps {
   projects: Project[]
+  schedules?: Schedule[]
   selectedProjectId: string | null
   onCreateQuickTask: (input: string, fallbackProjectId?: string) => boolean
 }
 
 export const QuickCaptureBar = ({
   projects,
+  schedules = [],
   selectedProjectId,
   onCreateQuickTask,
 }: QuickCaptureBarProps) => {
@@ -34,8 +36,8 @@ export const QuickCaptureBar = ({
 
   const parsed = useMemo(() => {
     if (!input.trim()) return null
-    return parseQuickTaskInput(input, projects)
-  }, [input, projects])
+    return parseQuickTaskInput(input, projects, undefined, schedules)
+  }, [input, projects, schedules])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()

@@ -1,16 +1,36 @@
 import type { FormEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BackupControls } from './backup-controls'
-import type { Dependency, Project, Task, TaskSession } from '../../domain/model'
+import type {
+  DeadlineType,
+  Dependency,
+  Project,
+  Schedule,
+  Task,
+  TaskPriority,
+  TaskSession,
+} from '../../domain/model'
 
 interface TaskPanelProps {
   focusToken: number
   hidden: boolean
+  allProjects?: Project[]
+  schedules?: Schedule[]
   onCreateTask: (projectId: string, title: string) => boolean
   onCreateSubtask?: (projectId: string, parentTaskId: string, title: string) => boolean
   onUpdateTaskConstraints?: (
     taskId: string,
-    constraints: { estimateMinutes?: number; dueAt?: string; earliestStartAt?: string },
+    constraints: {
+      estimateMinutes?: number
+      dueAt?: string
+      earliestStartAt?: string
+      priority?: TaskPriority
+      deadlineType?: DeadlineType
+      description?: string
+      labels?: string[]
+      scheduleId?: string
+      targetProjectId?: string
+    },
   ) => boolean
   onCreateDependency?: (fromTaskId: string, toTaskId: string) => boolean
   onDeleteDependency?: (dependencyId: string) => boolean
@@ -29,6 +49,8 @@ interface TaskPanelProps {
 export const TaskPanel = ({
   focusToken,
   hidden,
+  allProjects = [],
+  schedules = [],
   onCreateTask,
   onCreateSubtask,
   onUpdateTaskConstraints,
@@ -61,10 +83,16 @@ export const TaskPanel = ({
     }
   }, [focusToken])
 
-  // Constraint editing state
+  // Constraint and metadata editing state
   const [editingConstraintTaskId, setEditingConstraintTaskId] = useState<string | null>(null)
   const [editMinutes, setEditMinutes] = useState<string>('')
   const [editDueAt, setEditDueAt] = useState<string>('')
+  const [editPriority, setEditPriority] = useState<TaskPriority>('MEDIUM')
+  const [editDeadlineType, setEditDeadlineType] = useState<DeadlineType>('SOFT')
+  const [editDescription, setEditDescription] = useState<string>('')
+  const [editLabels, setEditLabels] = useState<string>('')
+  const [editScheduleId, setEditScheduleId] = useState<string>('')
+  const [editTargetProjectId, setEditTargetProjectId] = useState<string>('')
   const [selectedPrereqId, setSelectedPrereqId] = useState<string>('')
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -86,6 +114,12 @@ export const TaskPanel = ({
     setEditingConstraintTaskId(task.id)
     setEditMinutes(task.estimateMinutes ? String(task.estimateMinutes) : '')
     setEditDueAt(task.dueAt ? task.dueAt.slice(0, 10) : '')
+    setEditPriority(task.priority ?? 'MEDIUM')
+    setEditDeadlineType(task.deadlineType ?? (task.dueAt ? 'SOFT' : 'NONE'))
+    setEditDescription(task.description ?? '')
+    setEditLabels(task.labels && task.labels.length > 0 ? task.labels.join(', ') : '')
+    setEditScheduleId(task.scheduleId ?? '')
+    setEditTargetProjectId(task.projectId)
     setSelectedPrereqId('')
   }
 
@@ -93,15 +127,28 @@ export const TaskPanel = ({
     event.preventDefault()
     if (!editingConstraintTaskId) return
 
+    const task = tasks.find((t) => t.id === editingConstraintTaskId)
+    if (!task) return
+
     if (onUpdateTaskConstraints) {
       const parsedMinutes = editMinutes.trim() ? parseInt(editMinutes, 10) : undefined
       const parsedDueAt = editDueAt.trim()
         ? new Date(`${editDueAt.trim()}T23:59:59.000Z`).toISOString()
         : undefined
+      const parsedLabels = editLabels
+        .split(',')
+        .map((l) => l.trim())
+        .filter(Boolean)
 
       onUpdateTaskConstraints(editingConstraintTaskId, {
         estimateMinutes: parsedMinutes,
         dueAt: parsedDueAt,
+        priority: editPriority,
+        deadlineType: editDeadlineType,
+        description: editDescription.trim() || undefined,
+        labels: parsedLabels,
+        scheduleId: editScheduleId || undefined,
+        targetProjectId: editTargetProjectId !== task.projectId ? editTargetProjectId : undefined,
       })
     }
 
@@ -143,8 +190,16 @@ export const TaskPanel = ({
       if (t.parentTaskId) return false
 
       if (searchQuery.trim()) {
-        const matchesQuery = t.title.toLowerCase().includes(searchQuery.toLowerCase().trim())
-        if (!matchesQuery) return false
+        const query = searchQuery.toLowerCase().trim()
+        const strippedQuery = query.replace(/^[#!]/, '')
+        const matchesTitle = t.title.toLowerCase().includes(query)
+        const matchesDesc = t.description ? t.description.toLowerCase().includes(query) : false
+        const matchesLabels = t.labels ? t.labels.some((l) => l.toLowerCase().includes(strippedQuery)) : false
+        const matchesPriority = t.priority ? t.priority.toLowerCase() === strippedQuery : false
+
+        if (!matchesTitle && !matchesDesc && !matchesLabels && !matchesPriority) {
+          return false
+        }
       }
 
       const sessionCount = sessionCountByTask.get(t.id) ?? 0
@@ -205,6 +260,15 @@ export const TaskPanel = ({
             </label>
 
             <div className="task-card__meta">
+              {task.priority ? (
+                <span
+                  className={`task-priority-badge task-priority-badge--${task.priority.toLowerCase()}`}
+                  title={`Priority: ${task.priority}`}
+                >
+                  {task.priority === 'ASAP' ? '🔥 ASAP' : task.priority === 'HIGH' ? '⚡ High' : task.priority === 'LOW' ? 'Low' : 'Med'}
+                </span>
+              ) : null}
+
               {task.estimateMinutes ? (
                 <span className="task-constraint-badge" title="Estimated duration">
                   ⏱ {task.estimateMinutes}m
@@ -212,8 +276,43 @@ export const TaskPanel = ({
               ) : null}
 
               {task.dueAt ? (
-                <span className="task-constraint-badge" title="Deadline">
+                <span
+                  className={`task-constraint-badge ${task.deadlineType === 'HARD' ? 'task-deadline-badge--hard' : ''}`}
+                  title={`Deadline (${task.deadlineType ?? 'SOFT'})`}
+                >
                   📅 {new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(task.dueAt))}
+                  {task.deadlineType === 'HARD' ? ' (Hard)' : ''}
+                </span>
+              ) : null}
+
+              {task.labels && task.labels.length > 0
+                ? task.labels.map((label) => (
+                    <span
+                      key={label}
+                      className="task-label-badge"
+                      onClick={() => setSearchQuery(label)}
+                      style={{ cursor: 'pointer' }}
+                      title={`Filter by tag: #${label}`}
+                    >
+                      #{label}
+                    </span>
+                  ))
+                : null}
+
+              {task.scheduleId ? (
+                (() => {
+                  const sched = schedules.find((s) => s.id === task.scheduleId)
+                  return sched ? (
+                    <span className="task-constraint-badge" title={`Assigned Schedule: ${sched.title}`}>
+                      🗓 {sched.title}
+                    </span>
+                  ) : null
+                })()
+              ) : null}
+
+              {task.recurrenceRuleId ? (
+                <span className="task-constraint-badge" title={`Recurring Task Instance (${task.recurrenceInstanceDate ?? ''})`}>
+                  🔁 Recurring
                 </span>
               ) : null}
 
@@ -260,6 +359,11 @@ export const TaskPanel = ({
                 Details
               </button>
             </div>
+            {task.description ? (
+              <div className="task-description-preview" title={task.description}>
+                {task.description.length > 90 ? `${task.description.slice(0, 90)}…` : task.description}
+              </div>
+            ) : null}
           </div>
 
           {!isSubtask ? (
@@ -429,13 +533,41 @@ export const TaskPanel = ({
         </div>
       )}
 
-      {/* Constraints Modal */}
+      {/* Constraints & Details Modal */}
       {editingTask ? (
-        <div aria-modal="true" className="calendar-dialog-overlay" role="dialog">
+        <div
+          aria-modal="true"
+          className="calendar-dialog-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setEditingConstraintTaskId(null)
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setEditingConstraintTaskId(null)
+            }
+          }}
+          role="dialog"
+        >
           <div className="calendar-dialog">
-            <h2>Task Constraints & Dependencies</h2>
+            <h2>Task Details & Constraints</h2>
             <p className="calendar-dialog__sub">{editingTask.title}</p>
             <form onSubmit={submitConstraints}>
+              <div className="calendar-dialog__field">
+                <label htmlFor="constraint-priority">Priority</label>
+                <select
+                  id="constraint-priority"
+                  onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+                  value={editPriority}
+                >
+                  <option value="ASAP">🔥 ASAP (Highest priority)</option>
+                  <option value="HIGH">⚡ High</option>
+                  <option value="MEDIUM">Medium (Normal)</option>
+                  <option value="LOW">Low</option>
+                </select>
+              </div>
+
               <div className="calendar-dialog__field">
                 <label htmlFor="constraint-duration">Estimated duration (minutes)</label>
                 <input
@@ -458,6 +590,85 @@ export const TaskPanel = ({
                   value={editDueAt}
                 />
               </div>
+
+              <div className="calendar-dialog__field">
+                <label htmlFor="constraint-deadline-type">Deadline strictness</label>
+                <select
+                  id="constraint-deadline-type"
+                  onChange={(e) => setEditDeadlineType(e.target.value as DeadlineType)}
+                  value={editDeadlineType}
+                >
+                  <option value="SOFT">Soft (Preferred target)</option>
+                  <option value="HARD">Hard (Strict drop-dead)</option>
+                  <option value="NONE">None</option>
+                </select>
+              </div>
+
+              <div className="calendar-dialog__field">
+                <label htmlFor="constraint-description">Description / Notes</label>
+                <textarea
+                  id="constraint-description"
+                  maxLength={2000}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Add notes, context, or links..."
+                  rows={3}
+                  value={editDescription}
+                />
+              </div>
+
+              <div className="calendar-dialog__field">
+                <label htmlFor="constraint-labels">Labels (comma-separated)</label>
+                <input
+                  id="constraint-labels"
+                  onChange={(e) => setEditLabels(e.target.value)}
+                  placeholder="e.g. frontend, urgent, client"
+                  type="text"
+                  value={editLabels}
+                />
+              </div>
+
+              {schedules.length > 0 ? (
+                <div className="calendar-dialog__field">
+                  <label htmlFor="constraint-schedule">Availability Schedule</label>
+                  <select
+                    id="constraint-schedule"
+                    onChange={(e) => setEditScheduleId(e.target.value)}
+                    value={editScheduleId}
+                  >
+                    <option value="">Default Schedule ({schedules.find((s) => s.isDefault)?.title ?? 'Default'})</option>
+                    {schedules.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        🗓 {s.title} {s.isDefault ? '(Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {editingTask.recurrenceRuleId ? (
+                <div className="calendar-dialog__field">
+                  <span className="badge badge--secondary" style={{ padding: '0.4rem 0.6rem' }}>
+                    🔁 Recurring Task Instance ({editingTask.recurrenceInstanceDate ?? 'pre-generated'})
+                  </span>
+                </div>
+              ) : null}
+
+              {allProjects.length > 1 ? (
+                <div className="calendar-dialog__field">
+                  <label htmlFor="constraint-project">Project</label>
+                  <select
+                    id="constraint-project"
+                    onChange={(e) => setEditTargetProjectId(e.target.value)}
+                    value={editTargetProjectId}
+                  >
+                    {allProjects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               {availablePrereqOptions.length > 0 ? (
                 <div className="calendar-dialog__field">

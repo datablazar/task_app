@@ -1,4 +1,4 @@
-import type { Project } from '../model'
+import type { DeadlineType, Project, Schedule, TaskPriority } from '../model'
 
 export interface ParsedQuickTask {
   rawInput: string
@@ -7,8 +7,13 @@ export interface ParsedQuickTask {
   projectName?: string
   estimateMinutes?: number
   dueAt?: string
+  priority?: TaskPriority
+  deadlineType?: DeadlineType
+  labels?: string[]
+  scheduleId?: string
+  scheduleName?: string
   matchedTokens: {
-    kind: 'project' | 'duration' | 'deadline'
+    kind: 'project' | 'duration' | 'deadline' | 'priority' | 'label' | 'deadline-type' | 'schedule'
     label: string
     token: string
   }[]
@@ -18,33 +23,101 @@ export const parseQuickTaskInput = (
   input: string,
   projects: Project[],
   referenceDate: Date = new Date(),
+  schedules: Schedule[] = [],
 ): ParsedQuickTask => {
   let text = input.trim()
   const matchedTokens: ParsedQuickTask['matchedTokens'] = []
 
   let matchedProject: Project | undefined
+  let matchedSchedule: Schedule | undefined
   let estimateMinutes: number | undefined
   let dueAt: string | undefined
+  let priority: TaskPriority | undefined
+  let deadlineType: DeadlineType | undefined
+  const labels: string[] = []
 
-  // 1. Extract Project Hashtag (e.g. #Course, #Research, #backend)
-  const projectRegex = /#([\w-]+)/i
-  const projectMatch = projectRegex.exec(text)
-  if (projectMatch) {
-    const query = projectMatch[1].toLowerCase()
-    matchedProject = projects.find(
-      (p) =>
-        p.title.toLowerCase().includes(query) ||
-        p.id.toLowerCase() === query ||
-        p.title.toLowerCase().replace(/\s+/g, '') === query,
-    )
-    if (matchedProject) {
-      matchedTokens.push({
-        kind: 'project',
-        label: `📁 ${matchedProject.title}`,
-        token: projectMatch[0],
+  // 1. Extract Priority (e.g. !asap, !urgent, p1, !high, p2, !med, p3, !low, p4)
+  const priorityAsapRegex = /(?:!asap|!urgent|\bp1\b)/i
+  const priorityHighRegex = /(?:!high|\bp2\b)/i
+  const priorityMedRegex = /(?:!medium|!med|\bp3\b)/i
+  const priorityLowRegex = /(?:!low|\bp4\b)/i
+
+  if (priorityAsapRegex.test(text)) {
+    const match = priorityAsapRegex.exec(text)!
+    priority = 'ASAP'
+    matchedTokens.push({ kind: 'priority', label: '🔥 ASAP', token: match[0] })
+    text = text.replace(priorityAsapRegex, '').trim()
+  } else if (priorityHighRegex.test(text)) {
+    const match = priorityHighRegex.exec(text)!
+    priority = 'HIGH'
+    matchedTokens.push({ kind: 'priority', label: '⚡ High', token: match[0] })
+    text = text.replace(priorityHighRegex, '').trim()
+  } else if (priorityMedRegex.test(text)) {
+    const match = priorityMedRegex.exec(text)!
+    priority = 'MEDIUM'
+    matchedTokens.push({ kind: 'priority', label: 'Med', token: match[0] })
+    text = text.replace(priorityMedRegex, '').trim()
+  } else if (priorityLowRegex.test(text)) {
+    const match = priorityLowRegex.exec(text)!
+    priority = 'LOW'
+    matchedTokens.push({ kind: 'priority', label: 'Low', token: match[0] })
+    text = text.replace(priorityLowRegex, '').trim()
+  }
+
+  // 2. Extract Deadline Strictness (e.g. !hard, !strict, hard deadline, !soft)
+  const hardRegex = /(?:!hard|!strict|\bhard deadline\b)/i
+  const softRegex = /(?:!soft|\bsoft deadline\b)/i
+  if (hardRegex.test(text)) {
+    const match = hardRegex.exec(text)!
+    deadlineType = 'HARD'
+    matchedTokens.push({ kind: 'deadline-type', label: '🔒 Hard', token: match[0] })
+    text = text.replace(hardRegex, '').trim()
+  } else if (softRegex.test(text)) {
+    const match = softRegex.exec(text)!
+    deadlineType = 'SOFT'
+    matchedTokens.push({ kind: 'deadline-type', label: 'Soft', token: match[0] })
+    text = text.replace(softRegex, '').trim()
+  }
+
+  // 3. Extract Hashtags (Project or Labels)
+  const hashtagRegex = /#([\w-]+)/gi
+  let tagMatch: RegExpExecArray | null
+  const matchedTagTokens: { raw: string; tag: string }[] = []
+  while ((tagMatch = hashtagRegex.exec(text)) !== null) {
+    matchedTagTokens.push({ raw: tagMatch[0], tag: tagMatch[1] })
+  }
+
+  for (const item of matchedTagTokens) {
+    const query = item.tag.toLowerCase()
+    // If not matched a project yet, check if tag matches any project
+    if (!matchedProject) {
+      const candidate = projects.find((p) => {
+        const title = p.title.toLowerCase()
+        const id = p.id.toLowerCase()
+        const slug = title.replace(/\s+/g, '')
+        return title === query || id === query || slug === query || title.includes(query) || id.includes(query)
       })
-      text = text.replace(projectRegex, '').trim()
+      if (candidate) {
+        matchedProject = candidate
+        matchedTokens.push({
+          kind: 'project',
+          label: `📁 ${matchedProject.title}`,
+          token: item.raw,
+        })
+        text = text.replace(item.raw, '').trim()
+        continue
+      }
     }
+
+    if (!labels.includes(query)) {
+      labels.push(query)
+      matchedTokens.push({
+        kind: 'label',
+        label: `#${query}`,
+        token: item.raw,
+      })
+    }
+    text = text.replace(item.raw, '').trim()
   }
 
   // 2. Extract Duration (e.g. 45m, 90 min, 1.5h, 2 hours)
@@ -151,6 +224,49 @@ export const parseQuickTaskInput = (
     }
   }
 
+  // 4. Extract Schedule (e.g. @"Night Owls", @Night Owls, @work, @personal)
+  for (const s of schedules) {
+    const title = s.title
+    const slug = title.replace(/\s+/g, '')
+    const kebab = title.replace(/\s+/g, '-')
+    const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(`@(?:"${escapedTitle}"|'${escapedTitle}'|${escapedTitle}|${slug}|${kebab}|${s.id})\\b`, 'i')
+    const match = pattern.exec(text)
+    if (match && !matchedSchedule) {
+      matchedSchedule = s
+      matchedTokens.push({
+        kind: 'schedule',
+        label: `🗓 ${s.title}`,
+        token: match[0],
+      })
+      text = text.replace(pattern, '').trim()
+      break
+    }
+  }
+
+  if (!matchedSchedule) {
+    const fallbackRegex = /@([\w-]+)/i
+    const fbMatch = fallbackRegex.exec(text)
+    if (fbMatch) {
+      const query = fbMatch[1].toLowerCase()
+      const candidate = schedules.find((s) => {
+        const title = s.title.toLowerCase()
+        const id = s.id.toLowerCase()
+        const slug = title.replace(/\s+/g, '')
+        return title === query || id === query || slug === query || title.includes(query)
+      })
+      if (candidate) {
+        matchedSchedule = candidate
+        matchedTokens.push({
+          kind: 'schedule',
+          label: `🗓 ${candidate.title}`,
+          token: fbMatch[0],
+        })
+        text = text.replace(fallbackRegex, '').trim()
+      }
+    }
+  }
+
   // Clean up any remaining multiple spaces
   const cleanedTitle = text.replace(/\s{2,}/g, ' ').trim()
 
@@ -161,6 +277,11 @@ export const parseQuickTaskInput = (
     projectName: matchedProject?.title,
     estimateMinutes,
     dueAt,
+    priority,
+    deadlineType,
+    labels: labels.length > 0 ? labels : undefined,
+    scheduleId: matchedSchedule?.id,
+    scheduleName: matchedSchedule?.title,
     matchedTokens,
   }
 }

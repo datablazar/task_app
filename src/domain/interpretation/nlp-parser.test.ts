@@ -49,6 +49,32 @@ describe('parseQuickTaskInput (Live NLP Quick-Capture)', () => {
     expect(result.estimateMinutes).toBeUndefined()
     expect(result.dueAt).toBeUndefined()
     expect(result.projectId).toBeUndefined()
+    expect(result.priority).toBeUndefined()
+    expect(result.deadlineType).toBeUndefined()
+    expect(result.labels).toBeUndefined()
     expect(result.matchedTokens).toEqual([])
+  })
+
+  it('extracts priority, hard deadline strictness, and labels', () => {
+    const input = 'Fix auth zero-day 45m by Friday at 5pm !asap !hard #security #backend #app'
+    const result = parseQuickTaskInput(input, projects, referenceDate)
+
+    expect(result.cleanedTitle).toBe('Fix auth zero-day')
+    expect(result.estimateMinutes).toBe(45)
+    expect(result.projectId).toBe('p-app')
+    expect(result.priority).toBe('ASAP')
+    expect(result.deadlineType).toBe('HARD')
+    expect(result.labels).toEqual(['security', 'backend'])
+    expect(result.dueAt).toBe('2026-09-04T17:00:00.000Z')
+  })
+
+  it('supports p1-p4 shortcuts and soft deadlines', () => {
+    const input = 'Update README p2 !soft #docs'
+    const result = parseQuickTaskInput(input, projects, referenceDate)
+
+    expect(result.cleanedTitle).toBe('Update README')
+    expect(result.priority).toBe('HIGH')
+    expect(result.deadlineType).toBe('SOFT')
+    expect(result.labels).toEqual(['docs'])
   })
 })

@@ -1,6 +1,7 @@
 import { failure, success } from './result'
 import type {
   AvailabilityWindow,
+  DeadlineType,
   Dependency,
   FixedEvent,
   PlannerDocument,
@@ -8,13 +9,17 @@ import type {
   PolicyPreset,
   Project,
   ProposalDecision,
+  RecurrenceRule,
   Revision,
   RevisionKind,
+  Schedule,
   Task,
+  TaskPriority,
   TaskSession,
 } from './model'
 import type { Result } from './result'
 import { hasDependencyCycle } from './dependency-graph'
+import { generateTasksFromRecurrenceRule } from './recurrence-engine'
 
 const maximumTitleLength = 200
 const maximumReasonLength = 300
@@ -48,11 +53,61 @@ export type PlannerCommand =
       estimateMinutes?: number
       dueAt?: string
       earliestStartAt?: string
+      priority?: TaskPriority
+      deadlineType?: DeadlineType
+      description?: string
+      labels?: string[]
+      scheduleId?: string
+    })
+  | (CommandMetadata & {
+      type: 'move-task'
+      taskId: string
+      targetProjectId: string
     })
   | (CommandMetadata & {
       type: 'set-task-completion'
       taskId: string
       completed: boolean
+    })
+  | (CommandMetadata & {
+      type: 'create-schedule'
+      title: string
+      workingWindows: AvailabilityWindow[]
+      isDefault?: boolean
+    })
+  | (CommandMetadata & {
+      type: 'update-schedule'
+      scheduleId: string
+      title?: string
+      workingWindows?: AvailabilityWindow[]
+      isDefault?: boolean
+    })
+  | (CommandMetadata & {
+      type: 'delete-schedule'
+      scheduleId: string
+    })
+  | (CommandMetadata & {
+      type: 'set-default-schedule'
+      scheduleId: string
+    })
+  | (CommandMetadata & {
+      type: 'create-recurrence-rule'
+      rule: Omit<RecurrenceRule, 'createdAt' | 'updatedAt'>
+      horizonDays?: number
+    })
+  | (CommandMetadata & {
+      type: 'update-recurrence-rule'
+      ruleId: string
+      updates: Partial<Omit<RecurrenceRule, 'id' | 'createdAt' | 'updatedAt'>>
+    })
+  | (CommandMetadata & {
+      type: 'delete-recurrence-rule'
+      ruleId: string
+      deleteFutureTasks?: boolean
+    })
+  | (CommandMetadata & {
+      type: 'generate-recurring-tasks'
+      horizonDays?: number
     })
   | (CommandMetadata & {
       type: 'create-fixed-event'
@@ -117,6 +172,8 @@ export interface CommandFailure {
     | 'project-not-found'
     | 'task-not-found'
     | 'parent-task-not-found'
+    | 'schedule-not-found'
+    | 'recurrence-rule-not-found'
     | 'dependency-not-found'
     | 'fixed-event-not-found'
     | 'task-session-not-found'
@@ -150,8 +207,26 @@ export const executeCommand = (
       return createSubtask(document, command)
     case 'update-task-constraints':
       return updateTaskConstraints(document, command)
+    case 'move-task':
+      return moveTask(document, command)
     case 'set-task-completion':
       return setTaskCompletion(document, command)
+    case 'create-schedule':
+      return createSchedule(document, command)
+    case 'update-schedule':
+      return updateSchedule(document, command)
+    case 'delete-schedule':
+      return deleteSchedule(document, command)
+    case 'set-default-schedule':
+      return setDefaultSchedule(document, command)
+    case 'create-recurrence-rule':
+      return createRecurrenceRule(document, command)
+    case 'update-recurrence-rule':
+      return updateRecurrenceRule(document, command)
+    case 'delete-recurrence-rule':
+      return deleteRecurrenceRule(document, command)
+    case 'generate-recurring-tasks':
+      return generateRecurringTasksCommand(document, command)
     case 'create-fixed-event':
       return createFixedEvent(document, command)
     case 'delete-fixed-event':
@@ -297,6 +372,9 @@ const createSubtask = (
   )
 }
 
+const validPriorities: TaskPriority[] = ['ASAP', 'HIGH', 'MEDIUM', 'LOW']
+const validDeadlineTypes: DeadlineType[] = ['HARD', 'SOFT', 'NONE']
+
 const updateTaskConstraints = (
   document: PlannerDocument,
   command: Extract<PlannerCommand, { type: 'update-task-constraints' }>,
@@ -330,6 +408,44 @@ const updateTaskConstraints = (
     return invalidCommand('Earliest start date must be a valid UTC timestamp.')
   }
 
+  if (command.priority !== undefined && !validPriorities.includes(command.priority)) {
+    return invalidCommand('Priority must be ASAP, HIGH, MEDIUM, or LOW.')
+  }
+
+  if (command.deadlineType !== undefined && !validDeadlineTypes.includes(command.deadlineType)) {
+    return invalidCommand('Deadline type must be HARD, SOFT, or NONE.')
+  }
+
+  if (
+    command.description !== undefined &&
+    (typeof command.description !== 'string' || command.description.length > 2000)
+  ) {
+    return invalidCommand('Description must be a string up to 2000 characters.')
+  }
+
+  if (command.labels !== undefined) {
+    if (!Array.isArray(command.labels)) {
+      return invalidCommand('Labels must be an array of strings.')
+    }
+    if (command.labels.length > 20) {
+      return invalidCommand('A task can have at most 20 labels.')
+    }
+    for (const label of command.labels) {
+      if (typeof label !== 'string' || label.trim().length === 0 || label.length > 50) {
+        return invalidCommand('Each label must be between 1 and 50 characters.')
+      }
+    }
+  }
+
+  if (command.scheduleId !== undefined && command.scheduleId !== '') {
+    if (!document.schedules.some((s) => s.id === command.scheduleId)) {
+      return failure({
+        code: 'schedule-not-found',
+        message: 'The specified availability schedule does not exist.',
+      })
+    }
+  }
+
   const effectiveEarliest =
     command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt
   const effectiveDue = command.dueAt !== undefined ? command.dueAt : task.dueAt
@@ -349,6 +465,17 @@ const updateTaskConstraints = (
     dueAt: command.dueAt !== undefined ? command.dueAt : task.dueAt,
     earliestStartAt:
       command.earliestStartAt !== undefined ? command.earliestStartAt : task.earliestStartAt,
+    priority: command.priority !== undefined ? command.priority : task.priority,
+    deadlineType:
+      command.deadlineType !== undefined
+        ? command.deadlineType
+        : task.deadlineType ?? (task.dueAt ? 'SOFT' : 'NONE'),
+    description: command.description !== undefined ? command.description : task.description,
+    labels: command.labels !== undefined ? command.labels.map((l) => l.trim()) : task.labels,
+    scheduleId:
+      command.scheduleId !== undefined
+        ? command.scheduleId || undefined
+        : task.scheduleId,
     updatedAt: command.occurredAt,
   }
 
@@ -361,6 +488,72 @@ const updateTaskConstraints = (
       tasks: document.tasks.map((candidate) =>
         candidate.id === task.id ? nextTask : candidate,
       ),
+    },
+  )
+}
+
+const moveTask = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'move-task' }>,
+): CommandResult => {
+  const task = document.tasks.find((candidate) => candidate.id === command.taskId)
+  if (!task) {
+    return failure({
+      code: 'task-not-found',
+      message: 'That task no longer exists.',
+    })
+  }
+
+  const targetProject = document.projects.find((p) => p.id === command.targetProjectId)
+  if (!targetProject) {
+    return failure({
+      code: 'project-not-found',
+      message: 'The target project does not exist.',
+    })
+  }
+
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  if (task.projectId === command.targetProjectId) {
+    return invalidCommand('Task is already in the target project.')
+  }
+
+  const childSubtaskIds = new Set(
+    document.tasks.filter((t) => t.parentTaskId === task.id).map((t) => t.id),
+  )
+
+  const updatedTasks = document.tasks.map((t) => {
+    if (t.id === task.id) {
+      return {
+        ...t,
+        projectId: command.targetProjectId,
+        parentTaskId: undefined, // Detached from parent if moved to another project
+        updatedAt: command.occurredAt,
+      }
+    }
+    if (childSubtaskIds.has(t.id)) {
+      return {
+        ...t,
+        projectId: command.targetProjectId,
+        updatedAt: command.occurredAt,
+      }
+    }
+    return t
+  })
+
+  if (hasDependencyCycle(document.dependencies)) {
+    return invalidCommand('Moving this task creates an invalid circular dependency state.')
+  }
+
+  return revised(
+    document,
+    command,
+    'task-moved',
+    `Moved task “${task.title}” to “${targetProject.title}”.`,
+    {
+      tasks: updatedTasks,
     },
   )
 }
@@ -382,22 +575,331 @@ const setTaskCompletion = (
   }
 
   const completed = command.completed
-  const nextTask: Task = {
-    ...task,
-    completed,
-    updatedAt: command.occurredAt,
-  }
-
-  const action = completed ? 'Completed' : 'Reopened'
   return revised(
     document,
     command,
     'task-completion-changed',
-    `${action} task “${task.title}”.`,
+    completed
+      ? `Completed task “${task.title}”.`
+      : `Reopened task “${task.title}”.`,
     {
       tasks: document.tasks.map((candidate) =>
-        candidate.id === task.id ? nextTask : candidate,
+        candidate.id === command.taskId
+          ? {
+              ...candidate,
+              completed,
+              updatedAt: command.occurredAt,
+            }
+          : candidate,
       ),
+    },
+  )
+}
+
+const createSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-schedule' }>,
+): CommandResult => {
+  const title = normaliseTitle(command.title)
+  if (!title) {
+    return invalidCommand('Schedule names must contain between 1 and 200 characters.')
+  }
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+  if (!Array.isArray(command.workingWindows) || command.workingWindows.length === 0) {
+    return invalidCommand('A schedule must have at least one working availability window.')
+  }
+  for (const win of command.workingWindows) {
+    if (!Number.isInteger(win.dayOfWeek) || win.dayOfWeek < 1 || win.dayOfWeek > 7) {
+      return invalidCommand('Day of week must be between 1 and 7.')
+    }
+    if (!Number.isInteger(win.startHour) || win.startHour < 0 || win.startHour > 23) {
+      return invalidCommand('Start hour must be between 0 and 23.')
+    }
+    if (!Number.isInteger(win.endHour) || win.endHour < 1 || win.endHour > 24) {
+      return invalidCommand('End hour must be between 1 and 24.')
+    }
+    if (win.startHour >= win.endHour) {
+      return invalidCommand('Start hour must be before end hour.')
+    }
+  }
+
+  const isDefault = Boolean(command.isDefault)
+  const schedules = isDefault
+    ? document.schedules.map((s) => ({ ...s, isDefault: false }))
+    : [...document.schedules]
+
+  const newSchedule: Schedule = {
+    id: command.id,
+    title,
+    isDefault,
+    workingWindows: command.workingWindows,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  schedules.push(newSchedule)
+
+  return revised(document, command, 'schedule-created', `Created schedule “${title}”.`, {
+    schedules,
+    ...(isDefault ? { availability: { workingWindows: command.workingWindows } } : {}),
+  })
+}
+
+const updateSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'update-schedule' }>,
+): CommandResult => {
+  const schedule = document.schedules.find((s) => s.id === command.scheduleId)
+  if (!schedule) {
+    return failure({ code: 'schedule-not-found', message: 'That schedule does not exist.' })
+  }
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+  let title = schedule.title
+  if (command.title !== undefined) {
+    const parsedTitle = normaliseTitle(command.title)
+    if (!parsedTitle) return invalidCommand('Schedule names must contain between 1 and 200 characters.')
+    title = parsedTitle
+  }
+  let workingWindows = schedule.workingWindows
+  if (command.workingWindows !== undefined) {
+    if (!Array.isArray(command.workingWindows) || command.workingWindows.length === 0) {
+      return invalidCommand('A schedule must have at least one working availability window.')
+    }
+    for (const win of command.workingWindows) {
+      if (!Number.isInteger(win.dayOfWeek) || win.dayOfWeek < 1 || win.dayOfWeek > 7) {
+        return invalidCommand('Day of week must be between 1 and 7.')
+      }
+      if (!Number.isInteger(win.startHour) || win.startHour < 0 || win.startHour > 23) {
+        return invalidCommand('Start hour must be between 0 and 23.')
+      }
+      if (!Number.isInteger(win.endHour) || win.endHour < 1 || win.endHour > 24) {
+        return invalidCommand('End hour must be between 1 and 24.')
+      }
+      if (win.startHour >= win.endHour) {
+        return invalidCommand('Start hour must be before end hour.')
+      }
+    }
+    workingWindows = command.workingWindows
+  }
+
+  const isDefault = command.isDefault !== undefined ? command.isDefault : schedule.isDefault
+  const updatedSchedules = document.schedules.map((s) => {
+    if (s.id === schedule.id) {
+      return {
+        ...s,
+        title,
+        workingWindows,
+        isDefault,
+        updatedAt: command.occurredAt,
+      }
+    }
+    return isDefault ? { ...s, isDefault: false } : s
+  })
+
+  return revised(document, command, 'schedule-updated', `Updated schedule “${title}”.`, {
+    schedules: updatedSchedules,
+    ...(isDefault ? { availability: { workingWindows } } : {}),
+  })
+}
+
+const deleteSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'delete-schedule' }>,
+): CommandResult => {
+  const schedule = document.schedules.find((s) => s.id === command.scheduleId)
+  if (!schedule) {
+    return failure({ code: 'schedule-not-found', message: 'That schedule does not exist.' })
+  }
+  if (document.schedules.length <= 1) {
+    return invalidCommand('You cannot delete the only remaining schedule.')
+  }
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  let remainingSchedules = document.schedules.filter((s) => s.id !== command.scheduleId)
+  if (schedule.isDefault && remainingSchedules.length > 0) {
+    remainingSchedules = remainingSchedules.map((s, idx) =>
+      idx === 0 ? { ...s, isDefault: true } : s,
+    )
+  }
+
+  // Clear scheduleId on tasks that used this deleted schedule
+  const updatedTasks = document.tasks.map((task) =>
+    task.scheduleId === command.scheduleId ? { ...task, scheduleId: undefined } : task,
+  )
+
+  const activeDefault = remainingSchedules.find((s) => s.isDefault) ?? remainingSchedules[0]
+
+  return revised(document, command, 'schedule-deleted', `Deleted schedule “${schedule.title}”.`, {
+    schedules: remainingSchedules,
+    tasks: updatedTasks,
+    availability: { workingWindows: activeDefault.workingWindows },
+  })
+}
+
+const setDefaultSchedule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'set-default-schedule' }>,
+): CommandResult => {
+  const target = document.schedules.find((s) => s.id === command.scheduleId)
+  if (!target) {
+    return failure({ code: 'schedule-not-found', message: 'That schedule does not exist.' })
+  }
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const schedules = document.schedules.map((s) => ({
+    ...s,
+    isDefault: s.id === command.scheduleId,
+  }))
+
+  return revised(document, command, 'default-schedule-changed', `Set “${target.title}” as default schedule.`, {
+    schedules,
+    availability: { workingWindows: target.workingWindows },
+  })
+}
+
+const createRecurrenceRule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'create-recurrence-rule' }>,
+): CommandResult => {
+  const { rule, horizonDays = 90 } = command
+  const title = normaliseTitle(rule.title)
+  if (!title) {
+    return invalidCommand('Recurring task titles must contain between 1 and 200 characters.')
+  }
+  if (!document.projects.some((p) => p.id === rule.projectId)) {
+    return failure({ code: 'project-not-found', message: 'Choose an existing project before creating a recurring rule.' })
+  }
+  if (!['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY'].includes(rule.frequency)) {
+    return invalidCommand('Frequency must be DAILY, WEEKLY, BIWEEKLY, or MONTHLY.')
+  }
+  if (hasId(document, rule.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const newRule: RecurrenceRule = {
+    ...rule,
+    title,
+    createdAt: command.occurredAt,
+    updatedAt: command.occurredAt,
+  }
+
+  const horizonEnd = new Date(Date.parse(command.occurredAt) + horizonDays * 24 * 3600 * 1000)
+  let instanceIdCounter = 1
+  const createInstanceId = () => `${rule.id}-inst-${instanceIdCounter++}-${Date.now().toString(36)}`
+
+  const generatedTasks = generateTasksFromRecurrenceRule(
+    newRule,
+    document.tasks,
+    horizonEnd,
+    createInstanceId,
+    new Date(command.occurredAt),
+  )
+
+  return revised(document, command, 'recurrence-rule-created', `Created recurring rule for “${title}”.`, {
+    recurrenceRules: [...document.recurrenceRules, newRule],
+    tasks: [...document.tasks, ...generatedTasks],
+  })
+}
+
+const updateRecurrenceRule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'update-recurrence-rule' }>,
+): CommandResult => {
+  const rule = document.recurrenceRules.find((r) => r.id === command.ruleId)
+  if (!rule) {
+    return failure({ code: 'recurrence-rule-not-found', message: 'Recurring rule not found.' })
+  }
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const updatedRule: RecurrenceRule = {
+    ...rule,
+    ...command.updates,
+    updatedAt: command.occurredAt,
+  }
+
+  const updatedRules = document.recurrenceRules.map((r) =>
+    r.id === command.ruleId ? updatedRule : r,
+  )
+
+  return revised(document, command, 'recurrence-rule-updated', `Updated recurring rule “${updatedRule.title}”.`, {
+    recurrenceRules: updatedRules,
+  })
+}
+
+const deleteRecurrenceRule = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'delete-recurrence-rule' }>,
+): CommandResult => {
+  const rule = document.recurrenceRules.find((r) => r.id === command.ruleId)
+  if (!rule) {
+    return failure({ code: 'recurrence-rule-not-found', message: 'Recurring rule not found.' })
+  }
+  if (hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const shouldDeleteFuture = command.deleteFutureTasks ?? true
+  const todayStr = command.occurredAt.slice(0, 10)
+
+  const remainingTasks = document.tasks.filter((t) => {
+    if (t.recurrenceRuleId !== command.ruleId) return true
+    if (t.completed) return true // Keep completed tasks
+    if (shouldDeleteFuture) {
+      if (t.recurrenceInstanceDate && t.recurrenceInstanceDate >= todayStr) return false
+      if (t.dueAt && t.dueAt >= command.occurredAt) return false
+    }
+    return true
+  })
+
+  const remainingRules = document.recurrenceRules.filter((r) => r.id !== command.ruleId)
+
+  return revised(document, command, 'recurrence-rule-deleted', `Deleted recurring rule “${rule.title}”.`, {
+    recurrenceRules: remainingRules,
+    tasks: remainingTasks,
+  })
+}
+
+const generateRecurringTasksCommand = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'generate-recurring-tasks' }>,
+): CommandResult => {
+  const horizonDays = command.horizonDays ?? 90
+  const horizonEnd = new Date(Date.parse(command.occurredAt) + horizonDays * 24 * 3600 * 1000)
+  let instanceIdCounter = 1
+  const createInstanceId = () => `rec-inst-${instanceIdCounter++}-${Date.now().toString(36)}`
+
+  let currentTasks = [...document.tasks]
+  let totalGenerated = 0
+
+  for (const rule of document.recurrenceRules) {
+    const generated = generateTasksFromRecurrenceRule(
+      rule,
+      currentTasks,
+      horizonEnd,
+      createInstanceId,
+      new Date(command.occurredAt),
+    )
+    currentTasks = [...currentTasks, ...generated]
+    totalGenerated += generated.length
+  }
+
+  return revised(
+    document,
+    command,
+    'recurring-tasks-generated',
+    `Generated ${totalGenerated} recurring task instance(s).`,
+    {
+      tasks: currentTasks,
     },
   )
 }
@@ -812,7 +1314,16 @@ const revised = (
   changes: Partial<
     Pick<
       PlannerDocument,
-      'projects' | 'tasks' | 'dependencies' | 'availability' | 'policy' | 'fixedEvents' | 'taskSessions' | 'proposals'
+      | 'projects'
+      | 'tasks'
+      | 'dependencies'
+      | 'availability'
+      | 'policy'
+      | 'fixedEvents'
+      | 'taskSessions'
+      | 'proposals'
+      | 'schedules'
+      | 'recurrenceRules'
     >
   >,
   snapshot?: string,
@@ -903,6 +1414,8 @@ const hasId = (document: PlannerDocument, id: string): boolean =>
   document.projects.some((project) => project.id === id) ||
   document.tasks.some((task) => task.id === id) ||
   document.dependencies.some((dep) => dep.id === id) ||
+  document.schedules?.some((schedule) => schedule.id === id) ||
+  document.recurrenceRules?.some((rule) => rule.id === id) ||
   document.fixedEvents.some((event) => event.id === id) ||
   document.taskSessions.some((session) => session.id === id) ||
   document.proposals.some((proposal) => proposal.id === id)

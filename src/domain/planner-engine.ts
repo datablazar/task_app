@@ -1,5 +1,13 @@
 import { getTopologicalOrder, hasDependencyCycle } from './dependency-graph'
-import type { Dependency, PlannerDocument, PlanRisk, TaskSession } from './model'
+import type {
+  Dependency,
+  PlannerDocument,
+  PlanRisk,
+  Schedule,
+  Task,
+  TaskPriority,
+  TaskSession,
+} from './model'
 
 export interface PlanOptions {
   now: string // ISO UTC timestamp
@@ -16,10 +24,42 @@ export interface PlanOutput {
 
 interface WorkingSlot {
   dayKey: string // YYYY-MM-DD
+  scheduleId: string
   startAt: string
   endAt: string
   durationMinutes: number
   isMorning: boolean
+}
+
+export const getScheduleForTask = (task: Task, document: PlannerDocument): Schedule => {
+  if (task.scheduleId && document.schedules && document.schedules.length > 0) {
+    const found = document.schedules.find((s) => s.id === task.scheduleId)
+    if (found) return found
+  }
+  const defaultSchedule = document.schedules?.find((s) => s.isDefault) ?? document.schedules?.[0]
+  if (defaultSchedule) return defaultSchedule
+  return {
+    id: 'default',
+    title: 'Default',
+    isDefault: true,
+    workingWindows: document.availability.workingWindows,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  }
+}
+
+const getPriorityWeight = (priority?: TaskPriority): number => {
+  switch (priority) {
+    case 'ASAP':
+      return 4
+    case 'HIGH':
+      return 3
+    case 'LOW':
+      return 1
+    case 'MEDIUM':
+    default:
+      return 2
+  }
 }
 
 export const generateReferencePlan = (
@@ -93,6 +133,22 @@ export const generateReferencePlan = (
     if (isPrerequisite(b.id, a.id, document.dependencies)) return 1
     if (isPrerequisite(a.id, b.id, document.dependencies)) return -1
 
+    const aIsHard = a.deadlineType === 'HARD' && Boolean(a.dueAt)
+    const bIsHard = b.deadlineType === 'HARD' && Boolean(b.dueAt)
+
+    if (aIsHard && !bIsHard) {
+      const aDueMs = Date.parse(a.dueAt!)
+      if (aDueMs - Date.parse(options.now) <= 48 * 3600 * 1000) return -1
+    } else if (!aIsHard && bIsHard) {
+      const bDueMs = Date.parse(b.dueAt!)
+      if (bDueMs - Date.parse(options.now) <= 48 * 3600 * 1000) return 1
+    }
+
+    const weightDiff = getPriorityWeight(b.priority) - getPriorityWeight(a.priority)
+    if (weightDiff !== 0) {
+      return weightDiff
+    }
+
     if (a.dueAt && b.dueAt) {
       const diff = Date.parse(a.dueAt) - Date.parse(b.dueAt)
       if (diff !== 0) return diff
@@ -111,7 +167,7 @@ export const generateReferencePlan = (
     return a.createdAt.localeCompare(b.createdAt)
   })
 
-  // 5. Generate available working slots (excluding fixed events & locked sessions)
+  // 5. Generate available working slots (excluding fixed events & locked sessions across all schedules)
   const horizonDays = options.horizonDays ?? 7
   const availableSlots = generateAvailableSlots(
     document,
@@ -134,7 +190,7 @@ export const generateReferencePlan = (
     dailyWorkloadMinutes.set(dayKey, (dailyWorkloadMinutes.get(dayKey) ?? 0) + dur)
   }
 
-  // 6. Allocate tasks into slots based on policy preset
+  // 6. Allocate tasks into slots based on policy preset and task schedule
   for (const task of prioritizedTasks) {
     const totalEstimate = task.estimateMinutes ?? 60
     const alreadyAllocated = lockedMinutesByTask.get(task.id) ?? 0
@@ -144,6 +200,8 @@ export const generateReferencePlan = (
       reasons.push(`Task “${task.title}” is fully satisfied by locked sessions.`)
       continue
     }
+
+    const taskSchedule = getScheduleForTask(task, document)
 
     let minStartMs = Date.parse(options.now)
     if (task.earliestStartAt) {
@@ -172,8 +230,11 @@ export const generateReferencePlan = (
     for (let pass = 1; pass <= maxPasses && remainingMinutes > 0; pass++) {
       for (let i = 0; i < availableSlots.length && remainingMinutes > 0; i++) {
         const slot = availableSlots[i]
-        const slotStartMs = Date.parse(slot.startAt)
+        if (slot.scheduleId !== taskSchedule.id) {
+          continue
+        }
 
+        const slotStartMs = Date.parse(slot.startAt)
         if (slotStartMs < minStartMs) {
           continue
         }
@@ -217,13 +278,40 @@ export const generateReferencePlan = (
           (dailyWorkloadMinutes.get(slot.dayKey) ?? 0) + allocatedMinutes,
         )
 
-        // Consume slot
-        if (allocatedMinutes === slot.durationMinutes) {
-          availableSlots.splice(i, 1)
-          i--
-        } else {
-          slot.startAt = sessionEndAt
-          slot.durationMinutes -= allocatedMinutes
+        // Universal Calendar Blocking: Consume / slice the allocated time interval across ALL schedules
+        for (let j = availableSlots.length - 1; j >= 0; j--) {
+          const otherSlot = availableSlots[j]
+          const otherStartMs = Date.parse(otherSlot.startAt)
+          const otherEndMs = Date.parse(otherSlot.endAt)
+
+          if (slotStartMs < otherEndMs && sessionEndMs > otherStartMs) {
+            if (slotStartMs <= otherStartMs && sessionEndMs >= otherEndMs) {
+              // Fully consumed
+              availableSlots.splice(j, 1)
+              if (j <= i) i--
+            } else if (slotStartMs <= otherStartMs && sessionEndMs < otherEndMs) {
+              // Truncate start
+              otherSlot.startAt = sessionEndAt
+              otherSlot.durationMinutes = Math.round((otherEndMs - sessionEndMs) / (60 * 1000))
+            } else if (slotStartMs > otherStartMs && sessionEndMs >= otherEndMs) {
+              // Truncate end
+              otherSlot.endAt = sessionStartAt
+              otherSlot.durationMinutes = Math.round((slotStartMs - otherStartMs) / (60 * 1000))
+            } else {
+              // Split slot
+              const originalEnd = otherSlot.endAt
+              otherSlot.endAt = sessionStartAt
+              otherSlot.durationMinutes = Math.round((slotStartMs - otherStartMs) / (60 * 1000))
+
+              const splitSlot: WorkingSlot = {
+                ...otherSlot,
+                startAt: sessionEndAt,
+                endAt: originalEnd,
+                durationMinutes: Math.round((otherEndMs - sessionEndMs) / (60 * 1000)),
+              }
+              availableSlots.splice(j + 1, 0, splitSlot)
+            }
+          }
         }
       }
     }
@@ -247,10 +335,13 @@ export const generateReferencePlan = (
       if (Date.parse(lastSessionEnd) > Date.parse(task.dueAt)) {
         const deficitMs = Date.parse(lastSessionEnd) - Date.parse(task.dueAt)
         const deficitMinutes = Math.ceil(deficitMs / (60 * 1000))
+        const isHard = task.deadlineType === 'HARD'
         risks.push({
           taskId: task.id,
           kind: 'deadline-missed',
-          message: `Task “${task.title}” misses its deadline by ${deficitMinutes}m.`,
+          message: isHard
+            ? `Task “${task.title}” misses its HARD deadline by ${deficitMinutes}m.`
+            : `Task “${task.title}” misses its deadline by ${deficitMinutes}m.`,
           dueAt: task.dueAt,
           deficitMinutes,
         })
@@ -259,12 +350,12 @@ export const generateReferencePlan = (
         )
       } else {
         reasons.push(
-          `Scheduled task “${task.title}” (${sessionsAllocatedCount} session(s)) safely before its deadline under ${policy.preset} policy.`,
+          `Scheduled task “${task.title}” (${sessionsAllocatedCount} session(s)) safely before its deadline on ${taskSchedule.title} schedule.`,
         )
       }
     } else {
       reasons.push(
-        `Scheduled task “${task.title}” (${sessionsAllocatedCount} session(s)) under ${policy.preset} policy.`,
+        `Scheduled task “${task.title}” (${sessionsAllocatedCount} session(s)) on ${taskSchedule.title} schedule under ${policy.preset} policy.`,
       )
     }
   }
@@ -315,14 +406,22 @@ const generateAvailableSlots = (
   startDate.setUTCHours(0, 0, 0, 0)
   const nowMs = Date.parse(nowIso)
 
-  const workingWindowsByDay = new Map<number, { startHour: number; endHour: number }[]>()
-  for (const win of document.availability.workingWindows) {
-    const list = workingWindowsByDay.get(win.dayOfWeek) ?? []
-    list.push({ startHour: win.startHour, endHour: win.endHour })
-    workingWindowsByDay.set(win.dayOfWeek, list)
-  }
+  // Schedules to evaluate
+  const schedules: Schedule[] =
+    document.schedules && document.schedules.length > 0
+      ? document.schedules
+      : [
+          {
+            id: 'default',
+            title: 'Default',
+            isDefault: true,
+            workingWindows: document.availability.workingWindows,
+            createdAt: '2026-09-01T00:00:00.000Z',
+            updatedAt: '2026-09-01T00:00:00.000Z',
+          },
+        ]
 
-  // Combine fixed events and locked sessions as hard calendar commitments
+  // Combine fixed events and locked sessions as universal hard calendar commitments
   const hardCommitments = [
     ...document.fixedEvents.map((e) => ({
       startMs: Date.parse(e.startAt),
@@ -334,58 +433,68 @@ const generateAvailableSlots = (
     })),
   ]
 
-  for (let dayOffset = 0; dayOffset < horizonDays; dayOffset++) {
-    const currentDay = new Date(startDate)
-    currentDay.setUTCDate(startDate.getUTCDate() + dayOffset)
-    const dayKey = currentDay.toISOString().slice(0, 10)
+  for (const sched of schedules) {
+    const workingWindowsByDay = new Map<number, { startHour: number; endHour: number }[]>()
+    for (const win of sched.workingWindows) {
+      const list = workingWindowsByDay.get(win.dayOfWeek) ?? []
+      list.push({ startHour: win.startHour, endHour: win.endHour })
+      workingWindowsByDay.set(win.dayOfWeek, list)
+    }
 
-    const jsDay = currentDay.getUTCDay()
-    const isoDayOfWeek = jsDay === 0 ? 7 : jsDay
+    for (let dayOffset = 0; dayOffset < horizonDays; dayOffset++) {
+      const currentDay = new Date(startDate)
+      currentDay.setUTCDate(startDate.getUTCDate() + dayOffset)
+      const dayKey = currentDay.toISOString().slice(0, 10)
 
-    const windows = workingWindowsByDay.get(isoDayOfWeek) ?? []
-    for (const win of windows) {
-      for (let hour = win.startHour; hour < win.endHour; hour++) {
-        const slotStart = new Date(Date.UTC(
-          currentDay.getUTCFullYear(),
-          currentDay.getUTCMonth(),
-          currentDay.getUTCDate(),
-          hour,
-          0,
-          0,
-        ))
-        const slotEnd = new Date(Date.UTC(
-          currentDay.getUTCFullYear(),
-          currentDay.getUTCMonth(),
-          currentDay.getUTCDate(),
-          hour + 1,
-          0,
-          0,
-        ))
+      const jsDay = currentDay.getUTCDay()
+      const isoDayOfWeek = jsDay === 0 ? 7 : jsDay
 
-        const slotStartMs = slotStart.getTime()
-        const slotEndMs = slotEnd.getTime()
+      const windows = workingWindowsByDay.get(isoDayOfWeek) ?? []
+      for (const win of windows) {
+        for (let hour = win.startHour; hour < win.endHour; hour++) {
+          const slotStart = new Date(Date.UTC(
+            currentDay.getUTCFullYear(),
+            currentDay.getUTCMonth(),
+            currentDay.getUTCDate(),
+            hour,
+            0,
+            0,
+          ))
+          const slotEnd = new Date(Date.UTC(
+            currentDay.getUTCFullYear(),
+            currentDay.getUTCMonth(),
+            currentDay.getUTCDate(),
+            hour + 1,
+            0,
+            0,
+          ))
 
-        if (slotEndMs <= nowMs) {
-          continue
-        }
+          const slotStartMs = slotStart.getTime()
+          const slotEndMs = slotEnd.getTime()
 
-        const effectiveStartMs = Math.max(slotStartMs, nowMs)
-        const effectiveDuration = Math.round((slotEndMs - effectiveStartMs) / (60 * 1000))
+          if (slotEndMs <= nowMs) {
+            continue
+          }
 
-        if (effectiveDuration <= 0) continue
+          const effectiveStartMs = Math.max(slotStartMs, nowMs)
+          const effectiveDuration = Math.round((slotEndMs - effectiveStartMs) / (60 * 1000))
 
-        const overlapsCommitment = hardCommitments.some((commitment) => {
-          return effectiveStartMs < commitment.endMs && slotEndMs > commitment.startMs
-        })
+          if (effectiveDuration <= 0) continue
 
-        if (!overlapsCommitment) {
-          slots.push({
-            dayKey,
-            startAt: new Date(effectiveStartMs).toISOString(),
-            endAt: slotEnd.toISOString(),
-            durationMinutes: effectiveDuration,
-            isMorning: hour < 13,
+          const overlapsCommitment = hardCommitments.some((commitment) => {
+            return effectiveStartMs < commitment.endMs && slotEndMs > commitment.startMs
           })
+
+          if (!overlapsCommitment) {
+            slots.push({
+              dayKey,
+              scheduleId: sched.id,
+              startAt: new Date(effectiveStartMs).toISOString(),
+              endAt: slotEnd.toISOString(),
+              durationMinutes: effectiveDuration,
+              isMorning: hour < 13,
+            })
+          }
         }
       }
     }

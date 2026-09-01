@@ -1,8 +1,14 @@
-import { DEFAULT_AVAILABILITY, DEFAULT_POLICY, PLANNER_SCHEMA_VERSION } from './model'
+import {
+  DEFAULT_AVAILABILITY,
+  DEFAULT_POLICY,
+  DEFAULT_SCHEDULES,
+  PLANNER_SCHEMA_VERSION,
+} from './model'
 import { failure, success } from './result'
 import type {
   Availability,
   AvailabilityWindow,
+  DeadlineType,
   Dependency,
   FixedEvent,
   PlannerDocument,
@@ -12,9 +18,13 @@ import type {
   ProposalCapability,
   ProposalDecision,
   ProposalProvenance,
+  RecurrenceFrequency,
+  RecurrenceRule,
   Revision,
   RevisionKind,
+  Schedule,
   Task,
+  TaskPriority,
   TaskSession,
 } from './model'
 import type { Result } from './result'
@@ -62,7 +72,7 @@ export const validatePlannerDocument = (
     return invalidBackup('A backup must contain a planner document.')
   }
 
-  // Handle migration from earlier versions to current schema (v6)
+  // Handle migration from earlier versions to current schema (v8)
   let docRecord = candidate
   if (docRecord.schemaVersion === 1) {
     if (
@@ -83,6 +93,8 @@ export const validatePlannerDocument = (
       fixedEvents: [],
       taskSessions: [],
       dependencies: [],
+      schedules: DEFAULT_SCHEDULES,
+      recurrenceRules: [],
       availability: DEFAULT_AVAILABILITY,
       policy: DEFAULT_POLICY,
       proposals: [],
@@ -106,6 +118,8 @@ export const validatePlannerDocument = (
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
       dependencies: [],
+      schedules: DEFAULT_SCHEDULES,
+      recurrenceRules: [],
       availability: DEFAULT_AVAILABILITY,
       policy: DEFAULT_POLICY,
       proposals: [],
@@ -130,6 +144,8 @@ export const validatePlannerDocument = (
     docRecord = {
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
+      recurrenceRules: [],
       policy: DEFAULT_POLICY,
       proposals: [],
     }
@@ -154,7 +170,34 @@ export const validatePlannerDocument = (
     docRecord = {
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
+      recurrenceRules: [],
       proposals: [],
+    }
+  } else if (docRecord.schemaVersion === 6 || docRecord.schemaVersion === 7) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        'schemaVersion',
+        'timeZone',
+        'revision',
+        'projects',
+        'tasks',
+        'dependencies',
+        'availability',
+        'policy',
+        'fixedEvents',
+        'taskSessions',
+        'proposals',
+        'revisions',
+      ])
+    ) {
+      return invalidBackup('A backup contains unsupported document fields.')
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      schedules: DEFAULT_SCHEDULES,
+      recurrenceRules: [],
     }
   }
 
@@ -166,6 +209,8 @@ export const validatePlannerDocument = (
       'projects',
       'tasks',
       'dependencies',
+      'schedules',
+      'recurrenceRules',
       'availability',
       'policy',
       'fixedEvents',
@@ -210,6 +255,16 @@ export const validatePlannerDocument = (
     return dependencies
   }
 
+  const schedules = parseSchedules(docRecord.schedules, identifiers)
+  if (!schedules.ok) {
+    return schedules
+  }
+
+  const recurrenceRules = parseRecurrenceRules(docRecord.recurrenceRules, projects.value, identifiers)
+  if (!recurrenceRules.ok) {
+    return recurrenceRules
+  }
+
   const availability = parseAvailability(docRecord.availability)
   if (!availability.ok) {
     return availability
@@ -247,6 +302,8 @@ export const validatePlannerDocument = (
     projects: projects.value,
     tasks: tasks.value,
     dependencies: dependencies.value,
+    schedules: schedules.value,
+    recurrenceRules: recurrenceRules.value,
     availability: availability.value,
     policy: policy.value,
     fixedEvents: fixedEvents.value,
@@ -291,6 +348,9 @@ const parseProjects = (
   return success(projects)
 }
 
+const validTaskPriorities: readonly TaskPriority[] = ['ASAP', 'HIGH', 'MEDIUM', 'LOW']
+const validDeadlineTypes: readonly DeadlineType[] = ['HARD', 'SOFT', 'NONE']
+
 const parseTasks = (
   candidate: unknown,
   projects: Project[],
@@ -310,10 +370,17 @@ const parseTasks = (
         'projectId',
         'parentTaskId',
         'title',
+        'description',
         'completed',
+        'priority',
+        'deadlineType',
+        'labels',
         'estimateMinutes',
         'dueAt',
         'earliestStartAt',
+        'scheduleId',
+        'recurrenceRuleId',
+        'recurrenceInstanceDate',
         'createdAt',
         'updatedAt',
       ]) ||
@@ -352,6 +419,34 @@ const parseTasks = (
     ) {
       return invalidBackup('Task earliest start date must be before due date.')
     }
+    if (
+      item.priority !== undefined &&
+      (typeof item.priority !== 'string' || !validTaskPriorities.includes(item.priority as TaskPriority))
+    ) {
+      return invalidBackup('Task priority must be ASAP, HIGH, MEDIUM, or LOW.')
+    }
+    if (
+      item.deadlineType !== undefined &&
+      (typeof item.deadlineType !== 'string' || !validDeadlineTypes.includes(item.deadlineType as DeadlineType))
+    ) {
+      return invalidBackup('Task deadline type must be HARD, SOFT, or NONE.')
+    }
+    if (
+      item.description !== undefined &&
+      (typeof item.description !== 'string' || item.description.length > 2000)
+    ) {
+      return invalidBackup('Task description must be a string up to 2000 characters.')
+    }
+    if (item.labels !== undefined) {
+      if (!Array.isArray(item.labels) || item.labels.length > 20) {
+        return invalidBackup('Task labels must be an array of at most 20 strings.')
+      }
+      for (const label of item.labels) {
+        if (typeof label !== 'string' || label.trim().length === 0 || label.length > 50) {
+          return invalidBackup('Each label must be a string between 1 and 50 characters.')
+        }
+      }
+    }
     if (!isUtcTimestamp(item.createdAt) || !isUtcTimestamp(item.updatedAt)) {
       return invalidBackup('Every task needs UTC creation and update timestamps.')
     }
@@ -372,6 +467,35 @@ const parseTasks = (
     if (typeof item.estimateMinutes === 'number') task.estimateMinutes = item.estimateMinutes
     if (typeof item.dueAt === 'string') task.dueAt = item.dueAt
     if (typeof item.earliestStartAt === 'string') task.earliestStartAt = item.earliestStartAt
+    if (typeof item.priority === 'string') {
+      task.priority = item.priority as TaskPriority
+    } else {
+      task.priority = 'MEDIUM'
+    }
+    if (typeof item.deadlineType === 'string') {
+      task.deadlineType = item.deadlineType as DeadlineType
+    } else {
+      task.deadlineType = item.dueAt ? 'SOFT' : 'NONE'
+    }
+    if (Array.isArray(item.labels)) {
+      task.labels = Array.from(
+        new Set((item.labels as string[]).map((l) => (typeof l === 'string' ? l.trim() : '')).filter(Boolean)),
+      )
+    } else {
+      task.labels = []
+    }
+    if (typeof item.description === 'string') {
+      task.description = item.description.trim()
+    }
+    if (typeof item.scheduleId === 'string' && item.scheduleId.trim().length > 0) {
+      task.scheduleId = item.scheduleId.trim()
+    }
+    if (typeof item.recurrenceRuleId === 'string' && item.recurrenceRuleId.trim().length > 0) {
+      task.recurrenceRuleId = item.recurrenceRuleId.trim()
+    }
+    if (typeof item.recurrenceInstanceDate === 'string' && item.recurrenceInstanceDate.trim().length > 0) {
+      task.recurrenceInstanceDate = item.recurrenceInstanceDate.trim()
+    }
 
     tasks.push(task)
   }
@@ -390,6 +514,167 @@ const parseTasks = (
   }
 
   return success(tasks)
+}
+
+const parseSchedules = (
+  candidate: unknown,
+  identifiers: Set<string>,
+): Result<Schedule[], BackupFailure> => {
+  if (!Array.isArray(candidate) || candidate.length === 0) {
+    return invalidBackup('A backup must contain at least one availability schedule.')
+  }
+
+  const schedules: Schedule[] = []
+  let hasDefault = false
+
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, ['id', 'title', 'isDefault', 'workingWindows', 'createdAt', 'updatedAt']) ||
+      !isIdentifier(item.id) ||
+      !isTitle(item.title) ||
+      typeof item.isDefault !== 'boolean' ||
+      !Array.isArray(item.workingWindows) ||
+      item.workingWindows.length === 0 ||
+      !isUtcTimestamp(item.createdAt) ||
+      !isUtcTimestamp(item.updatedAt)
+    ) {
+      return invalidBackup('Each schedule needs a valid ID, title, default flag, and working windows.')
+    }
+    if (identifiers.has(item.id)) {
+      return invalidBackup('Schedule IDs must be unique.')
+    }
+    identifiers.add(item.id)
+
+    const windows: AvailabilityWindow[] = []
+    for (const win of item.workingWindows) {
+      if (
+        !isRecord(win) ||
+        !hasOnlyKeys(win, ['dayOfWeek', 'startHour', 'endHour']) ||
+        typeof win.dayOfWeek !== 'number' ||
+        !Number.isInteger(win.dayOfWeek) ||
+        win.dayOfWeek < 1 ||
+        win.dayOfWeek > 7 ||
+        typeof win.startHour !== 'number' ||
+        !Number.isInteger(win.startHour) ||
+        win.startHour < 0 ||
+        win.startHour > 23 ||
+        typeof win.endHour !== 'number' ||
+        !Number.isInteger(win.endHour) ||
+        win.endHour < 1 ||
+        win.endHour > 24 ||
+        win.startHour >= win.endHour
+      ) {
+        return invalidBackup('Schedule working windows must have valid day (1-7) and startHour < endHour.')
+      }
+      windows.push({
+        dayOfWeek: win.dayOfWeek,
+        startHour: win.startHour,
+        endHour: win.endHour,
+      })
+    }
+
+    if (item.isDefault) {
+      hasDefault = true
+    }
+
+    schedules.push({
+      id: item.id,
+      title: item.title.trim(),
+      isDefault: item.isDefault,
+      workingWindows: windows,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    })
+  }
+
+  if (!hasDefault && schedules.length > 0) {
+    schedules[0].isDefault = true
+  }
+
+  return success(schedules)
+}
+
+const validFrequencies: readonly RecurrenceFrequency[] = ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']
+
+const parseRecurrenceRules = (
+  candidate: unknown,
+  projects: Project[],
+  identifiers: Set<string>,
+): Result<RecurrenceRule[], BackupFailure> => {
+  if (!Array.isArray(candidate)) {
+    return invalidBackup('Recurrence rules must be an array.')
+  }
+
+  const projectIds = new Set(projects.map((p) => p.id))
+  const rules: RecurrenceRule[] = []
+
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, [
+        'id',
+        'projectId',
+        'title',
+        'description',
+        'estimateMinutes',
+        'priority',
+        'deadlineType',
+        'labels',
+        'scheduleId',
+        'frequency',
+        'daysOfWeek',
+        'interval',
+        'startDate',
+        'endDate',
+        'createdAt',
+        'updatedAt',
+      ]) ||
+      !isIdentifier(item.id) ||
+      !projectIds.has(item.projectId as string) ||
+      !isTitle(item.title) ||
+      typeof item.frequency !== 'string' ||
+      !validFrequencies.includes(item.frequency as RecurrenceFrequency) ||
+      !isUtcTimestamp(item.startDate) ||
+      !isUtcTimestamp(item.createdAt) ||
+      !isUtcTimestamp(item.updatedAt)
+    ) {
+      return invalidBackup('Every recurrence rule needs valid configuration and timestamps.')
+    }
+
+    if (item.endDate !== undefined && !isUtcTimestamp(item.endDate)) {
+      return invalidBackup('Recurrence rule end date must be a valid UTC timestamp.')
+    }
+
+    if (identifiers.has(item.id)) {
+      return invalidBackup('Recurrence rule IDs must be unique.')
+    }
+    identifiers.add(item.id)
+
+    const rule: RecurrenceRule = {
+      id: item.id,
+      projectId: item.projectId as string,
+      title: (item.title as string).trim(),
+      frequency: item.frequency as RecurrenceFrequency,
+      startDate: item.startDate as string,
+      createdAt: item.createdAt as string,
+      updatedAt: item.updatedAt as string,
+    }
+
+    if (typeof item.description === 'string') rule.description = item.description.trim()
+    if (typeof item.estimateMinutes === 'number') rule.estimateMinutes = item.estimateMinutes
+    if (typeof item.priority === 'string') rule.priority = item.priority as TaskPriority
+    if (typeof item.deadlineType === 'string') rule.deadlineType = item.deadlineType as DeadlineType
+    if (Array.isArray(item.labels)) rule.labels = item.labels.map((l) => String(l).trim()).filter(Boolean)
+    if (typeof item.scheduleId === 'string') rule.scheduleId = item.scheduleId
+    if (Array.isArray(item.daysOfWeek)) rule.daysOfWeek = item.daysOfWeek as number[]
+    if (typeof item.interval === 'number') rule.interval = item.interval
+    if (typeof item.endDate === 'string') rule.endDate = item.endDate
+
+    rules.push(rule)
+  }
+
+  return success(rules)
 }
 
 const parseDependencies = (
@@ -690,6 +975,16 @@ const revisionKinds: readonly RevisionKind[] = [
   'subtask-created',
   'task-completion-changed',
   'task-constraints-updated',
+  'task-metadata-updated',
+  'task-moved',
+  'schedule-created',
+  'schedule-updated',
+  'schedule-deleted',
+  'default-schedule-changed',
+  'recurrence-rule-created',
+  'recurrence-rule-updated',
+  'recurrence-rule-deleted',
+  'recurring-tasks-generated',
   'fixed-event-created',
   'fixed-event-deleted',
   'task-session-created',

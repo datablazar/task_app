@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { serialiseBackup } from '../domain/backup'
-import { DEFAULT_AVAILABILITY, DEFAULT_POLICY } from '../domain/model'
+import { DEFAULT_AVAILABILITY, DEFAULT_POLICY, DEFAULT_SCHEDULES } from '../domain/model'
 import type { PlannerDocument } from '../domain/model'
 import { LocalPlannerRepository, plannerStorageKey } from './local-planner-repository'
 
 const document: PlannerDocument = {
-  schemaVersion: 6,
+  schemaVersion: 8,
   timeZone: 'Europe/London',
   revision: 6,
   projects: [
@@ -24,6 +24,9 @@ const document: PlannerDocument = {
       completed: false,
       estimateMinutes: 45,
       dueAt: '2026-09-05T18:00:00.000Z',
+      priority: 'MEDIUM',
+      deadlineType: 'SOFT',
+      labels: [],
       createdAt: '2026-09-01T09:01:00.000Z',
       updatedAt: '2026-09-01T09:01:00.000Z',
     },
@@ -34,6 +37,9 @@ const document: PlannerDocument = {
       title: 'Draft syllabus section',
       completed: false,
       estimateMinutes: 20,
+      priority: 'MEDIUM',
+      deadlineType: 'NONE',
+      labels: [],
       createdAt: '2026-09-01T09:02:00.000Z',
       updatedAt: '2026-09-01T09:02:00.000Z',
     },
@@ -46,6 +52,8 @@ const document: PlannerDocument = {
       createdAt: '2026-09-01T09:02:30.000Z',
     },
   ],
+  schedules: DEFAULT_SCHEDULES,
+  recurrenceRules: [],
   availability: DEFAULT_AVAILABILITY,
   policy: DEFAULT_POLICY,
   fixedEvents: [
@@ -156,7 +164,7 @@ describe('LocalPlannerRepository', () => {
     expect(after).toEqual(before)
   })
 
-  it('seamlessly migrates version 1, 2, 3, 4, and 5 backups into version 6', () => {
+  it('seamlessly migrates version 1, 2, 3, 4, 5, and 6 backups into version 7', () => {
     const storage = new MemoryStorage()
     const repository = new LocalPlannerRepository(storage)
 
@@ -166,41 +174,104 @@ describe('LocalPlannerRepository', () => {
       timeZone: 'Europe/London',
       revision: 2,
       projects: document.projects,
-      tasks: [document.tasks[0]],
+      tasks: [{
+        id: 'task-1',
+        projectId: 'project-1',
+        title: 'Outline week one',
+        completed: false,
+        estimateMinutes: 45,
+        dueAt: '2026-09-05T18:00:00.000Z',
+        createdAt: '2026-09-01T09:01:00.000Z',
+        updatedAt: '2026-09-01T09:01:00.000Z',
+      }],
       revisions: document.revisions.slice(0, 2),
     })
 
     const restoredV1 = repository.restore(v1Raw)
     expect(restoredV1.ok).toBe(true)
     if (!restoredV1.ok) throw new Error('Expected successful restore')
-    expect(restoredV1.value.schemaVersion).toBe(6)
+    expect(restoredV1.value.schemaVersion).toBe(8)
     expect(restoredV1.value.fixedEvents).toEqual([])
     expect(restoredV1.value.taskSessions).toEqual([])
     expect(restoredV1.value.dependencies).toEqual([])
+    expect(restoredV1.value.schedules).toHaveLength(2)
+    expect(restoredV1.value.recurrenceRules).toEqual([])
     expect(restoredV1.value.availability).toEqual(DEFAULT_AVAILABILITY)
     expect(restoredV1.value.policy).toEqual(DEFAULT_POLICY)
     expect(restoredV1.value.proposals).toEqual([])
+    expect(restoredV1.value.tasks[0].priority).toBe('MEDIUM')
+    expect(restoredV1.value.tasks[0].deadlineType).toBe('SOFT')
+    expect(restoredV1.value.tasks[0].labels).toEqual([])
 
-    // Migration from v5
-    const v5Raw = JSON.stringify({
-      schemaVersion: 5,
+    // Migration from v6
+    const v6Raw = JSON.stringify({
+      schemaVersion: 6,
       timeZone: 'Europe/London',
       revision: 4,
       projects: document.projects,
-      tasks: document.tasks,
-      dependencies: document.dependencies,
+      tasks: [{
+        id: 'task-1',
+        projectId: 'project-1',
+        title: 'Outline week one',
+        completed: false,
+        estimateMinutes: 45,
+        dueAt: '2026-09-05T18:00:00.000Z',
+        createdAt: '2026-09-01T09:01:00.000Z',
+        updatedAt: '2026-09-01T09:01:00.000Z',
+      }],
+      dependencies: [],
       availability: document.availability,
       policy: document.policy,
-      fixedEvents: document.fixedEvents,
-      taskSessions: document.taskSessions,
+      fixedEvents: [],
+      taskSessions: [],
+      proposals: [],
       revisions: document.revisions.slice(0, 4),
     })
 
-    const restoredV5 = repository.restore(v5Raw)
-    expect(restoredV5.ok).toBe(true)
-    if (!restoredV5.ok) throw new Error('Expected successful restore')
-    expect(restoredV5.value.schemaVersion).toBe(6)
-    expect(restoredV5.value.proposals).toEqual([])
+    const restoredV6 = repository.restore(v6Raw)
+    expect(restoredV6.ok).toBe(true)
+    if (!restoredV6.ok) throw new Error('Expected successful restore')
+    expect(restoredV6.value.schemaVersion).toBe(8)
+    expect(restoredV6.value.tasks[0].priority).toBe('MEDIUM')
+    expect(restoredV6.value.tasks[0].deadlineType).toBe('SOFT')
+    expect(restoredV6.value.tasks[0].labels).toEqual([])
+
+    // Migration from v7
+    const v7Raw = JSON.stringify({
+      schemaVersion: 7,
+      timeZone: 'Europe/London',
+      revision: 4,
+      projects: document.projects,
+      tasks: [{
+        id: 'task-1',
+        projectId: 'project-1',
+        title: 'Outline week one',
+        completed: false,
+        estimateMinutes: 45,
+        dueAt: '2026-09-05T18:00:00.000Z',
+        priority: 'HIGH',
+        deadlineType: 'HARD',
+        labels: ['research'],
+        createdAt: '2026-09-01T09:01:00.000Z',
+        updatedAt: '2026-09-01T09:01:00.000Z',
+      }],
+      dependencies: [],
+      availability: document.availability,
+      policy: document.policy,
+      fixedEvents: [],
+      taskSessions: [],
+      proposals: [],
+      revisions: document.revisions.slice(0, 4),
+    })
+
+    const restoredV7 = repository.restore(v7Raw)
+    expect(restoredV7.ok).toBe(true)
+    if (!restoredV7.ok) throw new Error('Expected successful restore')
+    expect(restoredV7.value.schemaVersion).toBe(8)
+    expect(restoredV7.value.tasks[0].priority).toBe('HIGH')
+    expect(restoredV7.value.tasks[0].deadlineType).toBe('HARD')
+    expect(restoredV7.value.tasks[0].labels).toEqual(['research'])
+    expect(restoredV7.value.schedules).toHaveLength(2)
   })
 
   it('does not overwrite existing local data when an import is invalid', () => {

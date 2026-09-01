@@ -6,12 +6,16 @@ import { defaultInterpretationService } from '../domain/interpretation'
 import { parseQuickTaskInput } from '../domain/interpretation/nlp-parser'
 import type { PlannerWorkspace } from '../application/planner-workspace'
 import type {
+  AvailabilityWindow,
+  DeadlineType,
   PlanningPolicy,
   PlanRisk,
   PlannerDocument,
   Project,
   ProposalCapability,
   ProposalProvenance,
+  RecurrenceRule,
+  TaskPriority,
 } from '../domain/model'
 import type {
   ProviderMode,
@@ -40,30 +44,24 @@ export const usePlanner = ({
   createId = createStableId,
   now = () => new Date(),
 }: UsePlannerOptions) => {
-  const initial = useMemo(() => {
+  const [document, setDocument] = useState<PlannerDocument>(() => {
     const loaded = workspace.load()
-    if (!loaded.ok) {
-      return {
-        document: createEmptyPlannerDocument(getLocalTimeZone()),
-        notice: { tone: 'error' as const, message: loaded.error.message },
-      }
+    if (loaded.ok && loaded.value) {
+      return loaded.value
     }
-    return {
-      document: loaded.value ?? createEmptyPlannerDocument(getLocalTimeZone()),
-      notice: { tone: 'success' as const, message: 'Saved locally.' },
-    }
-  }, [workspace])
-
-  const [document, setDocument] = useState<PlannerDocument>(initial.document)
-  const [notice, setNotice] = useState<PlannerNotice>(initial.notice)
-  const [latestRisks, setLatestRisks] = useState<PlanRisk[]>([])
+    return createEmptyPlannerDocument(getLocalTimeZone())
+  })
 
   const [providerMode, setProviderModeState] = useState<ProviderMode>(() => {
     try {
-      return (localStorage.getItem(PROVIDER_MODE_KEY) as ProviderMode) || 'simulated-ai'
+      const saved = localStorage.getItem(PROVIDER_MODE_KEY)
+      if (saved === 'simulated-ai' || saved === 'heuristic' || saved === 'gemini-api') {
+        return saved
+      }
     } catch {
-      return 'simulated-ai'
+      // Fallback
     }
+    return 'heuristic'
   })
 
   const [apiKey, setApiKeyState] = useState<string>(() => {
@@ -74,12 +72,18 @@ export const usePlanner = ({
     }
   })
 
+  const [notice, setNotice] = useState<PlannerNotice>({
+    tone: 'success',
+    message: 'Saved locally.',
+  })
+  const [latestRisks, setLatestRisks] = useState<PlanRisk[]>([])
+
   const setProviderMode = useCallback((mode: ProviderMode) => {
     setProviderModeState(mode)
     try {
       localStorage.setItem(PROVIDER_MODE_KEY, mode)
     } catch {
-      // safe fallback
+      // ignore
     }
   }, [])
 
@@ -88,12 +92,12 @@ export const usePlanner = ({
     try {
       localStorage.setItem(GEMINI_API_KEY, key)
     } catch {
-      // safe fallback
+      // ignore
     }
   }, [])
 
   const createProject = useCallback(
-    (title: string): Project | undefined => {
+    (title: string): Project | null => {
       const id = createId()
       const result = workspace.execute(document, {
         type: 'create-project',
@@ -104,11 +108,11 @@ export const usePlanner = ({
       })
       if (!result.ok) {
         setNotice({ tone: 'error', message: result.error.message })
-        return undefined
+        return null
       }
       setDocument(result.value.document)
       setNotice({ tone: 'success', message: 'Saved locally.' })
-      return result.value.document.projects.find((project) => project.id === id)
+      return result.value.document.projects.find((p) => p.id === id) ?? null
     },
     [createId, document, now, workspace],
   )
@@ -163,22 +167,255 @@ export const usePlanner = ({
         estimateMinutes?: number
         dueAt?: string
         earliestStartAt?: string
+        priority?: TaskPriority
+        deadlineType?: DeadlineType
+        description?: string
+        labels?: string[]
+        scheduleId?: string
+        targetProjectId?: string
       },
     ): boolean => {
-      const result = workspace.execute(document, {
+      let currentDoc = document
+      const task = currentDoc.tasks.find((t) => t.id === taskId)
+      if (!task) return false
+
+      if (
+        constraints.targetProjectId &&
+        constraints.targetProjectId !== task.projectId
+      ) {
+        const moveResult = workspace.execute(currentDoc, {
+          type: 'move-task',
+          id: createId(),
+          revisionId: createId(),
+          occurredAt: now().toISOString(),
+          taskId,
+          targetProjectId: constraints.targetProjectId,
+        })
+        if (!moveResult.ok) {
+          setNotice({ tone: 'error', message: moveResult.error.message })
+          return false
+        }
+        currentDoc = moveResult.value.document
+      }
+
+      const result = workspace.execute(currentDoc, {
         type: 'update-task-constraints',
         id: taskId,
         revisionId: createId(),
         occurredAt: now().toISOString(),
         taskId,
-        ...constraints,
+        estimateMinutes: constraints.estimateMinutes,
+        dueAt: constraints.dueAt,
+        earliestStartAt: constraints.earliestStartAt,
+        priority: constraints.priority,
+        deadlineType: constraints.deadlineType,
+        description: constraints.description,
+        labels: constraints.labels,
+        scheduleId: constraints.scheduleId,
       })
       if (!result.ok) {
         setNotice({ tone: 'error', message: result.error.message })
         return false
       }
       setDocument(result.value.document)
-      setNotice({ tone: 'success', message: 'Task constraints updated.' })
+      setNotice({ tone: 'success', message: 'Task details updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const createSchedule = useCallback(
+    (title: string, workingWindows: AvailabilityWindow[], isDefault?: boolean): boolean => {
+      const result = workspace.execute(document, {
+        type: 'create-schedule',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        title,
+        workingWindows,
+        isDefault,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: `Schedule “${title}” created.` })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const updateSchedule = useCallback(
+    (
+      scheduleId: string,
+      updates: {
+        title?: string
+        workingWindows?: AvailabilityWindow[]
+        isDefault?: boolean
+      },
+    ): boolean => {
+      const result = workspace.execute(document, {
+        type: 'update-schedule',
+        id: scheduleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        scheduleId,
+        ...updates,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Schedule updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteSchedule = useCallback(
+    (scheduleId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'delete-schedule',
+        id: scheduleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        scheduleId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Schedule deleted.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const setDefaultSchedule = useCallback(
+    (scheduleId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'set-default-schedule',
+        id: scheduleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        scheduleId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Default schedule updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const createRecurrenceRule = useCallback(
+    (rule: Omit<RecurrenceRule, 'createdAt' | 'updatedAt'>, horizonDays?: number): boolean => {
+      const result = workspace.execute(document, {
+        type: 'create-recurrence-rule',
+        id: rule.id || createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        rule,
+        horizonDays,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: `Recurring rule for “${rule.title}” created and pre-generated.` })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const updateRecurrenceRule = useCallback(
+    (
+      ruleId: string,
+      updates: Partial<Omit<RecurrenceRule, 'id' | 'createdAt' | 'updatedAt'>>,
+    ): boolean => {
+      const result = workspace.execute(document, {
+        type: 'update-recurrence-rule',
+        id: ruleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        ruleId,
+        updates,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Recurring rule updated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const deleteRecurrenceRule = useCallback(
+    (ruleId: string, deleteFutureTasks?: boolean): boolean => {
+      const result = workspace.execute(document, {
+        type: 'delete-recurrence-rule',
+        id: ruleId,
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        ruleId,
+        deleteFutureTasks,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Recurring rule deleted.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const generateRecurringTasks = useCallback(
+    (horizonDays?: number): boolean => {
+      const result = workspace.execute(document, {
+        type: 'generate-recurring-tasks',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        horizonDays,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Recurring tasks generated.' })
+      return true
+    },
+    [createId, document, now, workspace],
+  )
+
+  const moveTask = useCallback(
+    (taskId: string, targetProjectId: string): boolean => {
+      const result = workspace.execute(document, {
+        type: 'move-task',
+        id: createId(),
+        revisionId: createId(),
+        occurredAt: now().toISOString(),
+        taskId,
+        targetProjectId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', message: result.error.message })
+        return false
+      }
+      setDocument(result.value.document)
+      setNotice({ tone: 'success', message: 'Task moved to project.' })
       return true
     },
     [createId, document, now, workspace],
@@ -669,7 +906,7 @@ export const usePlanner = ({
 
   const createQuickTask = useCallback(
     (input: string, fallbackProjectId?: string): boolean => {
-      const parsed = parseQuickTaskInput(input, document.projects, now())
+      const parsed = parseQuickTaskInput(input, document.projects, now(), document.schedules)
       const targetProjectId = parsed.projectId ?? fallbackProjectId ?? document.projects[0]?.id
       if (!targetProjectId) {
         setNotice({ tone: 'error', message: 'Create a project first before adding tasks.' })
@@ -692,7 +929,14 @@ export const usePlanner = ({
 
       let currentDoc = r1.value.document
 
-      if (parsed.estimateMinutes || parsed.dueAt) {
+      if (
+        parsed.estimateMinutes ||
+        parsed.dueAt ||
+        parsed.priority ||
+        parsed.deadlineType ||
+        parsed.scheduleId ||
+        (parsed.labels && parsed.labels.length > 0)
+      ) {
         const r2 = workspace.execute(currentDoc, {
           type: 'update-task-constraints',
           id: taskId,
@@ -701,6 +945,10 @@ export const usePlanner = ({
           taskId,
           estimateMinutes: parsed.estimateMinutes,
           dueAt: parsed.dueAt,
+          priority: parsed.priority,
+          deadlineType: parsed.deadlineType,
+          labels: parsed.labels,
+          scheduleId: parsed.scheduleId,
         })
         if (r2.ok) {
           currentDoc = r2.value.document
@@ -797,29 +1045,38 @@ export const usePlanner = ({
     createFixedEvent,
     createProject,
     createQuickTask,
+    createRecurrenceRule,
+    createSchedule,
     createSubtask,
     createTask,
     createTaskSession,
     deleteDependency,
     deleteFixedEvent,
+    deleteRecurrenceRule,
+    deleteSchedule,
     deleteTaskSession,
     dismissProposal,
     document,
     exportBackup,
     generateAndApplyPlan,
+    generateRecurringTasks,
     hasOverdueSessions,
     interpretTask,
+    moveTask,
     notice,
     providerMode,
     repairAndReschedule,
     restore,
     risks: latestRisks,
     setApiKey,
+    setDefaultSchedule,
     setProviderMode,
     setTaskCompletion,
     toggleSessionLock,
     undoLastPlan,
     updatePolicy,
+    updateRecurrenceRule,
+    updateSchedule,
     updateTaskConstraints,
   }
 }
