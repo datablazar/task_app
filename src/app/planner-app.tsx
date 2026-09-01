@@ -63,11 +63,31 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     })
   }
 
+  const taskCountByProject = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const task of planner.document.tasks) {
+      map.set(task.projectId, (map.get(task.projectId) ?? 0) + 1)
+    }
+    return map
+  }, [planner.document.tasks])
+
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header__identity">
-          <span className="brand">PA Planner</span>
+          <div className="brand-lockup">
+            <span className="brand-logo" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="4" width="18" height="17" rx="3.5" stroke="currentColor" strokeWidth="2" />
+                <path d="M16 2V6M8 2V6M3 9.5H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="12" cy="14" r="1.75" fill="currentColor" />
+              </svg>
+            </span>
+            <div className="brand-text">
+              <span className="brand">PA Planner</span>
+              <span className="brand-tag">Local Command Centre</span>
+            </div>
+          </div>
           <span
             aria-live="polite"
             className={`save-status save-status--${planner.notice.tone}`}
@@ -88,6 +108,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           onSelectProject={setSelectedProjectId}
           projects={planner.document.projects}
           selectedProjectId={activeSelectedProjectId}
+          taskCountByProject={taskCountByProject}
         />
         <CalendarPreview
           fixedEvents={planner.document.fixedEvents}

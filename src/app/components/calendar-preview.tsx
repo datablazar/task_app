@@ -38,7 +38,12 @@ export const CalendarPreview = ({
   onDeleteFixedEvent,
   onDeleteTaskSession,
 }: CalendarPreviewProps) => {
-  const week = getWeek(referenceDate)
+  const [weekOffset, setWeekOffset] = useState(0)
+
+  const activeReferenceDate = new Date(referenceDate)
+  activeReferenceDate.setDate(activeReferenceDate.getDate() + weekOffset)
+  const week = getWeek(activeReferenceDate)
+
   const heading = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
     month: 'long',
@@ -96,109 +101,154 @@ export const CalendarPreview = ({
   return (
     <section className="calendar-panel" aria-labelledby="calendar-heading">
       <header className="calendar-panel__header">
-        <h1 id="calendar-heading">{heading}</h1>
+        <div className="calendar-panel__header-info">
+          <h1 id="calendar-heading">{heading}</h1>
+        </div>
+        <div className="calendar-nav">
+          <button
+            aria-label="Previous week"
+            className="calendar-nav__btn"
+            onClick={() => setWeekOffset((w) => w - 7)}
+            type="button"
+          >
+            ‹
+          </button>
+          <button
+            className="calendar-nav__today"
+            onClick={() => setWeekOffset(0)}
+            type="button"
+          >
+            Today
+          </button>
+          <button
+            aria-label="Next week"
+            className="calendar-nav__btn"
+            onClick={() => setWeekOffset((w) => w + 7)}
+            type="button"
+          >
+            ›
+          </button>
+        </div>
       </header>
 
       <div className="calendar-grid">
         <div className="calendar-grid__corner" />
-        {week.map((day) => (
-          <div className="calendar-grid__day" key={day.toISOString()}>
-            {new Intl.DateTimeFormat('en-GB', {
-              day: 'numeric',
-              month: 'short',
-              weekday: 'short',
-            }).format(day)}
-          </div>
-        ))}
+        {week.map((day) => {
+          const isToday =
+            day.getUTCFullYear() === referenceDate.getUTCFullYear() &&
+            day.getUTCMonth() === referenceDate.getUTCMonth() &&
+            day.getUTCDate() === referenceDate.getUTCDate()
+          return (
+            <div className={`calendar-grid__day ${isToday ? 'is-today' : ''}`} key={day.toISOString()}>
+              <span className="calendar-grid__day-name">
+                {new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(day).toUpperCase()}
+              </span>
+              <span className="calendar-grid__day-num">
+                {day.getUTCDate()}
+              </span>
+            </div>
+          )
+        })}
         {hours.flatMap((hour) => [
           <div className="calendar-grid__time" key={`time-${hour}`}>
             {String(hour).padStart(2, '0')}:00
           </div>,
-            ...week.map((day) => {
-              const slotStart = new Date(
-                Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, 0, 0),
-              ).toISOString()
-              const slotEnd = new Date(
-                Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour + 1, 0, 0),
-              ).toISOString()
+          ...week.map((day) => {
+            const slotStart = new Date(
+              Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, 0, 0),
+            ).toISOString()
+            const slotEnd = new Date(
+              Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour + 1, 0, 0),
+            ).toISOString()
 
-              const slotFixed = fixedEvents.filter(
-                (e) => e.startAt >= slotStart && e.startAt < slotEnd,
-              )
-              const slotSessions = taskSessions.filter(
-                (s) => s.startAt >= slotStart && s.startAt < slotEnd,
-              )
-              const hasItems = slotFixed.length > 0 || slotSessions.length > 0
+            const slotFixed = fixedEvents.filter(
+              (e) => e.startAt >= slotStart && e.startAt < slotEnd,
+            )
+            const slotSessions = taskSessions.filter(
+              (s) => s.startAt >= slotStart && s.startAt < slotEnd,
+            )
+            const hasItems = slotFixed.length > 0 || slotSessions.length > 0
 
-              const dayLabel = new Intl.DateTimeFormat('en-GB', {
-                weekday: 'short',
-                day: 'numeric',
-                month: 'short',
-              }).format(day)
-              const timeLabel = `${String(hour).padStart(2, '0')}:00`
+            const dayLabel = new Intl.DateTimeFormat('en-GB', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            }).format(day)
+            const timeLabel = `${String(hour).padStart(2, '0')}:00`
 
-              return (
-                <div
-                  className={`calendar-grid__slot ${hasItems ? 'is-occupied' : ''}`}
-                  key={`${day.toISOString()}-${hour}`}
-                >
-                  {slotFixed.map((event) => (
-                    <div className="calendar-item calendar-item--fixed" key={event.id}>
-                      <div className="calendar-item__content">
+            return (
+              <div
+                className={`calendar-grid__slot ${hasItems ? 'is-occupied' : ''}`}
+                key={`${day.toISOString()}-${hour}`}
+              >
+                {slotFixed.map((event) => (
+                  <div className="calendar-item calendar-item--fixed" key={event.id}>
+                    <div className="calendar-item__content">
+                      <div className="calendar-item__meta">
                         <span className="calendar-item__tag">Fixed</span>
-                        <span className="calendar-item__title">{event.title}</span>
-                      </div>
-                      <button
-                        aria-label={`Remove fixed event ${event.title}`}
-                        className="calendar-item__delete"
-                        onClick={() => onDeleteFixedEvent(event.id)}
-                        type="button"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-
-                  {slotSessions.map((session) => {
-                    const task = taskLookup.get(session.taskId)
-                    const title = task?.title ?? 'Task session'
-                    return (
-                      <div className="calendar-item calendar-item--session" key={session.id}>
-                        <div className="calendar-item__content">
-                          <span className="calendar-item__tag">Session</span>
-                          <span className="calendar-item__title">{title}</span>
-                        </div>
                         <button
-                          aria-label={`Remove session for ${title}`}
+                          aria-label={`Remove fixed event ${event.title}`}
                           className="calendar-item__delete"
-                          onClick={() => onDeleteTaskSession(session.id)}
+                          onClick={() => onDeleteFixedEvent(event.id)}
                           type="button"
                         >
                           ×
                         </button>
                       </div>
-                    )
-                  })}
+                      <span className="calendar-item__title">{event.title}</span>
+                    </div>
+                  </div>
+                ))}
 
-                  {!hasItems ? (
-                    <button
-                      aria-label={`Schedule at ${timeLabel} on ${dayLabel}`}
-                      className="calendar-grid__add-slot-btn"
-                      onClick={() => openSlotDialog(day, hour)}
-                      type="button"
-                    >
-                      <span aria-hidden="true">+</span>
-                    </button>
-                  ) : null}
-                </div>
-              )
-            }),
-          ]
-        )}
+                {slotSessions.map((session) => {
+                  const task = taskLookup.get(session.taskId)
+                  const title = task?.title ?? 'Task session'
+                  return (
+                    <div className="calendar-item calendar-item--session" key={session.id}>
+                      <div className="calendar-item__content">
+                        <div className="calendar-item__meta">
+                          <span className="calendar-item__tag">Session</span>
+                          <button
+                            aria-label={`Remove session for ${title}`}
+                            className="calendar-item__delete"
+                            onClick={() => onDeleteTaskSession(session.id)}
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <span className="calendar-item__title">{title}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {!hasItems ? (
+                  <button
+                    aria-label={`Schedule at ${timeLabel} on ${dayLabel}`}
+                    className="calendar-grid__add-slot-btn"
+                    onClick={() => openSlotDialog(day, hour)}
+                    type="button"
+                  >
+                    <span aria-hidden="true" className="calendar-grid__add-icon">+</span>
+                  </button>
+                ) : null}
+              </div>
+            )
+          }),
+        ])}
       </div>
 
       {showEmptyState && totalCalendarItems === 0 ? (
         <div className="calendar-empty-state">
+          <div className="calendar-empty-state__icon" aria-hidden="true">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </div>
           <h2>
             {!hasProjects
               ? 'Your calendar starts here'

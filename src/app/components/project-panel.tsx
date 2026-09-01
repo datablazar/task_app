@@ -7,6 +7,7 @@ interface ProjectPanelProps {
   onSelectProject: (projectId: string) => void
   projects: Project[]
   selectedProjectId: string | null
+  taskCountByProject?: Map<string, number>
 }
 
 export const ProjectPanel = ({
@@ -14,6 +15,7 @@ export const ProjectPanel = ({
   onSelectProject,
   projects,
   selectedProjectId,
+  taskCountByProject,
 }: ProjectPanelProps) => {
   const [isCreating, setIsCreating] = useState(false)
   const [title, setTitle] = useState('')
@@ -35,21 +37,29 @@ export const ProjectPanel = ({
 
   return (
     <aside className="project-panel" aria-labelledby="projects-heading">
-      <h2 id="projects-heading">Projects</h2>
+      <div className="project-panel__header">
+        <h2 id="projects-heading">Projects</h2>
+        <span className="project-panel__badge">{projects.length}</span>
+      </div>
       <nav aria-label="Your projects">
         <ul className="project-list">
-          {projects.map((project) => (
-            <li key={project.id}>
-              <button
-                aria-current={project.id === selectedProjectId ? 'page' : undefined}
-                className={project.id === selectedProjectId ? 'project-item is-selected' : 'project-item'}
-                onClick={() => onSelectProject(project.id)}
-                type="button"
-              >
-                {project.title}
-              </button>
-            </li>
-          ))}
+          {projects.map((project) => {
+            const count = taskCountByProject?.get(project.id) ?? 0
+            const isSelected = project.id === selectedProjectId
+            return (
+              <li key={project.id}>
+                <button
+                  aria-current={isSelected ? 'page' : undefined}
+                  className={isSelected ? 'project-item is-selected' : 'project-item'}
+                  onClick={() => onSelectProject(project.id)}
+                  type="button"
+                >
+                  <span className="project-item__title">{project.title}</span>
+                  <span className="project-item__count">{count}</span>
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </nav>
 
