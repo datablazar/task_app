@@ -1,2 +1,8 @@
 # macOS Finder metadata
 .DS_Store
+
+# Local application artefacts
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
