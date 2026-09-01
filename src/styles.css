@@ -1303,6 +1303,318 @@ button:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   AI Assist & Proposal Components
+   -------------------------------------------------------------------------- */
+.ai-mode-badge-btn {
+  background: var(--bg-surface);
+  border-color: #c084fc;
+  color: #7e22ce;
+  font-weight: 600;
+}
+
+.ai-mode-badge-btn:hover {
+  background: #fdf4ff;
+  border-color: #a855f7;
+  color: #6b21a8;
+}
+
+.task-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #7e22ce;
+  background: #fdf4ff;
+  border: 1px solid #f0abfc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.task-ai-btn:hover {
+  background: #fae8ff;
+  border-color: #d946ef;
+  transform: translateY(-1px);
+}
+
+.ai-proposal-dialog,
+.ai-settings-modal {
+  width: 100%;
+  max-width: 580px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-default);
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.ai-proposal-dialog__header,
+.ai-settings-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.ai-proposal-dialog__title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-proposal-dialog__badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 6px;
+  background: #fdf4ff;
+  color: #7e22ce;
+  border: 1px solid #f0abfc;
+}
+
+.ai-proposal-dialog__header h2,
+.ai-settings-modal__header h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.ai-proposal-dialog__close,
+.ai-settings-modal__close {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.ai-proposal-dialog__close:hover,
+.ai-settings-modal__close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+}
+
+.ai-proposal-dialog__body,
+.ai-settings-modal__body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ai-proposal-card {
+  padding: 14px 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: var(--transition-smooth);
+}
+
+.ai-proposal-card:hover {
+  border-color: #c084fc;
+}
+
+.ai-proposal-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-proposal-card__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ai-proposal-card__icon {
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.ai-proposal-card__title strong {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+
+.ai-proposal-card__meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #7e22ce;
+  margin-top: 2px;
+}
+
+.ai-proposal-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ai-proposal-card__rationale {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+  background: var(--bg-surface);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 2px solid #a855f7;
+}
+
+.ai-subtask-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-subtask-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.ai-settings-modal__intro {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0 0 10px 0;
+}
+
+.ai-settings-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-settings-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--bg-surface);
+  transition: var(--transition-smooth);
+}
+
+.ai-settings-card:hover {
+  border-color: var(--brand-accent);
+}
+
+.ai-settings-card.is-selected {
+  border-color: #a855f7;
+  background: #fdf4ff;
+}
+
+.ai-settings-card input {
+  margin-top: 3px;
+}
+
+.ai-settings-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-settings-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ai-settings-card__content p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.badge--recommended {
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 4px;
+  background: #7e22ce;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.ai-settings-api-key {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ai-settings-api-key label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ai-settings-api-key input {
+  height: 38px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.ai-settings-api-key input:focus {
+  outline: none;
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
+
+.ai-settings-api-key__hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.ai-proposal-dialog__footer,
+.ai-settings-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+/* --------------------------------------------------------------------------
    Keyframes & Responsiveness
    -------------------------------------------------------------------------- */
 @keyframes fadeIn {

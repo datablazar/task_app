@@ -258,4 +258,56 @@ describe('PlannerApp', () => {
     await user.click(pinBtn)
     expect(screen.getByRole('status')).toHaveTextContent(/Session pinned state updated/i)
   })
+
+  it('supports AI proposal generation, reviewing proposals, and applying subtasks', async () => {
+    const user = userEvent.setup()
+    const storage = new MemoryStorage()
+    let idCounter = 1
+    const createId = () => `id-${idCounter++}`
+    const fixedNow = new Date('2026-09-01T09:00:00.000Z')
+
+    render(
+      <PlannerApp
+        createId={createId}
+        now={() => fixedNow}
+        storage={storage}
+      />,
+    )
+
+    // Create project
+    await user.click(screen.getByRole('button', { name: 'New project' }))
+    const projectInput = screen.getByPlaceholderText('Project name')
+    await user.type(projectInput, 'Podcast Launch')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    // Create task
+    const taskInput = screen.getByPlaceholderText('Add a task')
+    await user.type(taskInput, 'Launch weekly engineering podcast{enter}')
+    expect(screen.getByText('Launch weekly engineering podcast')).toBeVisible()
+
+    // Trigger AI assist
+    const aiBtn = screen.getByRole('button', { name: /AI assistance for Launch weekly engineering podcast/i })
+    await user.click(aiBtn)
+
+    // AI Proposal modal should appear asynchronously
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeVisible()
+    expect(await screen.findByText(/AI Assistance: Launch weekly engineering podcast/i)).toBeVisible()
+
+    // Apply proposed duration
+    const applyDurationBtn = await screen.findByRole('button', { name: /apply duration/i })
+    await user.click(applyDurationBtn)
+    expect(screen.getByRole('status')).toHaveTextContent(/Applied suggested duration/i)
+
+    // Apply subtasks
+    const addSubtasksBtn = await screen.findByRole('button', { name: /add \d+ subtasks/i })
+    await user.click(addSubtasksBtn)
+    expect(screen.getByRole('status')).toHaveTextContent(/Added \d+ subtask/i)
+
+    // Close modal
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+
+    // Verify subtasks are visible in the task panel
+    expect(await screen.findByText(/Episode outline/i)).toBeVisible()
+  })
 })

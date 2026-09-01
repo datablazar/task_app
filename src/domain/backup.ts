@@ -9,6 +9,9 @@ import type {
   PlanningPolicy,
   PolicyPreset,
   Project,
+  ProposalCapability,
+  ProposalDecision,
+  ProposalProvenance,
   Revision,
   RevisionKind,
   Task,
@@ -59,7 +62,7 @@ export const validatePlannerDocument = (
     return invalidBackup('A backup must contain a planner document.')
   }
 
-  // Handle migration from earlier versions to current schema (v5)
+  // Handle migration from earlier versions to current schema (v6)
   let docRecord = candidate
   if (docRecord.schemaVersion === 1) {
     if (
@@ -82,6 +85,7 @@ export const validatePlannerDocument = (
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
       policy: DEFAULT_POLICY,
+      proposals: [],
     }
   } else if (docRecord.schemaVersion === 2 || docRecord.schemaVersion === 3) {
     if (
@@ -104,6 +108,7 @@ export const validatePlannerDocument = (
       dependencies: [],
       availability: DEFAULT_AVAILABILITY,
       policy: DEFAULT_POLICY,
+      proposals: [],
     }
   } else if (docRecord.schemaVersion === 4) {
     if (
@@ -126,6 +131,30 @@ export const validatePlannerDocument = (
       ...docRecord,
       schemaVersion: PLANNER_SCHEMA_VERSION,
       policy: DEFAULT_POLICY,
+      proposals: [],
+    }
+  } else if (docRecord.schemaVersion === 5) {
+    if (
+      !hasOnlyKeys(docRecord, [
+        'schemaVersion',
+        'timeZone',
+        'revision',
+        'projects',
+        'tasks',
+        'dependencies',
+        'availability',
+        'policy',
+        'fixedEvents',
+        'taskSessions',
+        'revisions',
+      ])
+    ) {
+      return invalidBackup('A backup contains unsupported document fields.')
+    }
+    docRecord = {
+      ...docRecord,
+      schemaVersion: PLANNER_SCHEMA_VERSION,
+      proposals: [],
     }
   }
 
@@ -141,6 +170,7 @@ export const validatePlannerDocument = (
       'policy',
       'fixedEvents',
       'taskSessions',
+      'proposals',
       'revisions',
     ])
   ) {
@@ -200,6 +230,11 @@ export const validatePlannerDocument = (
     return taskSessions
   }
 
+  const proposals = parseProposals(docRecord.proposals, tasks.value, identifiers)
+  if (!proposals.ok) {
+    return proposals
+  }
+
   const revisions = parseRevisions(docRecord.revisions, documentRevision)
   if (!revisions.ok) {
     return revisions
@@ -216,6 +251,7 @@ export const validatePlannerDocument = (
     policy: policy.value,
     fixedEvents: fixedEvents.value,
     taskSessions: taskSessions.value,
+    proposals: proposals.value,
     revisions: revisions.value,
   })
 }
@@ -571,6 +607,83 @@ const parseTaskSessions = (
   return success(sessions)
 }
 
+const proposalCapabilities: readonly ProposalCapability[] = [
+  'duration-estimate',
+  'subtask-decomposition',
+  'deadline-extract',
+  'dependency-infer',
+]
+
+const proposalProvenances: readonly ProposalProvenance[] = [
+  'heuristic',
+  'simulated-ai',
+  'gemini-api',
+]
+
+const parseProposals = (
+  candidate: unknown,
+  tasks: Task[],
+  identifiers: Set<string>,
+): Result<ProposalDecision[], BackupFailure> => {
+  if (!Array.isArray(candidate)) {
+    return invalidBackup('Proposals must be an array.')
+  }
+
+  const taskIds = new Set(tasks.map((task) => task.id))
+  const proposals: ProposalDecision[] = []
+
+  for (const item of candidate) {
+    if (
+      !isRecord(item) ||
+      !hasOnlyKeys(item, [
+        'id',
+        'taskId',
+        'capability',
+        'provenance',
+        'confidence',
+        'summary',
+        'accepted',
+        'occurredAt',
+      ]) ||
+      !isIdentifier(item.id) ||
+      !isIdentifier(item.taskId) ||
+      typeof item.capability !== 'string' ||
+      !proposalCapabilities.includes(item.capability as ProposalCapability) ||
+      typeof item.provenance !== 'string' ||
+      !proposalProvenances.includes(item.provenance as ProposalProvenance) ||
+      typeof item.confidence !== 'number' ||
+      item.confidence < 0 ||
+      item.confidence > 1 ||
+      typeof item.summary !== 'string' ||
+      typeof item.accepted !== 'boolean' ||
+      !isUtcTimestamp(item.occurredAt)
+    ) {
+      return invalidBackup('Every proposal decision needs valid schema properties.')
+    }
+
+    if (!taskIds.has(item.taskId)) {
+      return invalidBackup('Every proposal must link an imported task.')
+    }
+    if (identifiers.has(item.id)) {
+      return invalidBackup('Proposal decision IDs must be unique.')
+    }
+    identifiers.add(item.id)
+
+    proposals.push({
+      id: item.id,
+      taskId: item.taskId,
+      capability: item.capability as ProposalCapability,
+      provenance: item.provenance as ProposalProvenance,
+      confidence: item.confidence,
+      summary: item.summary,
+      accepted: item.accepted,
+      occurredAt: item.occurredAt,
+    })
+  }
+
+  return success(proposals)
+}
+
 const revisionKinds: readonly RevisionKind[] = [
   'project-created',
   'task-created',
@@ -587,6 +700,8 @@ const revisionKinds: readonly RevisionKind[] = [
   'schedule-planned',
   'plan-undone',
   'policy-updated',
+  'proposal-accepted',
+  'proposal-rejected',
 ]
 
 const parseRevisions = (

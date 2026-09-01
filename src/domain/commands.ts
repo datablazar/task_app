@@ -7,6 +7,7 @@ import type {
   PlanningPolicy,
   PolicyPreset,
   Project,
+  ProposalDecision,
   Revision,
   RevisionKind,
   Task,
@@ -101,6 +102,10 @@ export type PlannerCommand =
       type: 'update-policy'
       policy: PlanningPolicy
     })
+  | (CommandMetadata & {
+      type: 'record-proposal-decision'
+      decision: ProposalDecision
+    })
 
 export interface CommandFailure {
   code:
@@ -165,6 +170,8 @@ export const executeCommand = (
       return updateAvailability(document, command)
     case 'update-policy':
       return updatePolicy(document, command)
+    case 'record-proposal-decision':
+      return recordProposalDecision(document, command)
   }
 }
 
@@ -746,6 +753,29 @@ const updatePolicy = (
   )
 }
 
+const recordProposalDecision = (
+  document: PlannerDocument,
+  command: Extract<PlannerCommand, { type: 'record-proposal-decision' }>,
+): CommandResult => {
+  if (hasId(document, command.id) || hasRevisionId(document, command.revisionId)) {
+    return duplicateId()
+  }
+
+  const kind = command.decision.accepted ? 'proposal-accepted' : 'proposal-rejected'
+  const action = command.decision.accepted ? 'Accepted' : 'Dismissed'
+  const fallbackReason = `${action} ${command.decision.capability} suggestion (${command.decision.provenance}).`
+
+  return revised(
+    document,
+    command,
+    kind,
+    fallbackReason,
+    {
+      proposals: [...document.proposals, command.decision],
+    },
+  )
+}
+
 const revised = (
   document: PlannerDocument,
   command: CommandMetadata,
@@ -754,7 +784,7 @@ const revised = (
   changes: Partial<
     Pick<
       PlannerDocument,
-      'projects' | 'tasks' | 'dependencies' | 'availability' | 'policy' | 'fixedEvents' | 'taskSessions'
+      'projects' | 'tasks' | 'dependencies' | 'availability' | 'policy' | 'fixedEvents' | 'taskSessions' | 'proposals'
     >
   >,
   snapshot?: string,
@@ -846,7 +876,8 @@ const hasId = (document: PlannerDocument, id: string): boolean =>
   document.tasks.some((task) => task.id === id) ||
   document.dependencies.some((dep) => dep.id === id) ||
   document.fixedEvents.some((event) => event.id === id) ||
-  document.taskSessions.some((session) => session.id === id)
+  document.taskSessions.some((session) => session.id === id) ||
+  document.proposals.some((proposal) => proposal.id === id)
 
 const hasRevisionId = (document: PlannerDocument, id: string): boolean =>
   document.revisions.some((revision) => revision.id === id)

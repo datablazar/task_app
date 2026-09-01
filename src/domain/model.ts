@@ -1,4 +1,4 @@
-export const PLANNER_SCHEMA_VERSION = 5 as const
+export const PLANNER_SCHEMA_VERSION = 6 as const
 
 export type RevisionKind =
   | 'project-created'
@@ -16,6 +16,8 @@ export type RevisionKind =
   | 'schedule-planned'
   | 'plan-undone'
   | 'policy-updated'
+  | 'proposal-accepted'
+  | 'proposal-rejected'
 
 export type PolicyPreset = 'balanced' | 'focus' | 'deadline'
 
@@ -105,6 +107,25 @@ export interface TaskSession {
   updatedAt: string
 }
 
+export type ProposalCapability =
+  | 'duration-estimate'
+  | 'subtask-decomposition'
+  | 'deadline-extract'
+  | 'dependency-infer'
+
+export type ProposalProvenance = 'heuristic' | 'simulated-ai' | 'gemini-api'
+
+export interface ProposalDecision {
+  id: string
+  taskId: string
+  capability: ProposalCapability
+  provenance: ProposalProvenance
+  confidence: number // 0.0 to 1.0
+  summary: string
+  accepted: boolean
+  occurredAt: string
+}
+
 export interface Revision {
   id: string
   number: number
@@ -125,6 +146,7 @@ export interface PlannerDocument {
   policy: PlanningPolicy
   fixedEvents: FixedEvent[]
   taskSessions: TaskSession[]
+  proposals: ProposalDecision[]
   revisions: Revision[]
 }
 
@@ -139,5 +161,6 @@ export const createEmptyPlannerDocument = (timeZone = 'UTC'): PlannerDocument =>
   policy: DEFAULT_POLICY,
   fixedEvents: [],
   taskSessions: [],
+  proposals: [],
   revisions: [],
 })

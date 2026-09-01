@@ -16,6 +16,7 @@ interface TaskPanelProps {
   onImport: (file: File) => void
   onSelectTaskId?: (taskId: string) => void
   onSetTaskCompletion: (taskId: string, completed: boolean) => void
+  onTriggerAi?: (task: Task) => void
   project: Project | undefined
   selectedTaskId?: string | null
   taskSessions?: TaskSession[]
@@ -33,6 +34,7 @@ export const TaskPanel = ({
   onImport,
   onSelectTaskId,
   onSetTaskCompletion,
+  onTriggerAi,
   project,
   selectedTaskId,
   taskSessions = [],
@@ -192,6 +194,18 @@ export const TaskPanel = ({
                 <span className="task-badge" title={`${sessionCount} session(s) scheduled`}>
                   {sessionCount} scheduled
                 </span>
+              ) : null}
+
+              {onTriggerAi && !isSubtask ? (
+                <button
+                  aria-label={`AI assistance for ${task.title}`}
+                  className="task-ai-btn"
+                  onClick={() => onTriggerAi(task)}
+                  title="AI Assist & Proposals"
+                  type="button"
+                >
+                  ✨ AI
+                </button>
               ) : null}
 
               <button

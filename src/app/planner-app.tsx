@@ -5,8 +5,12 @@ import { BackupControls } from './components/backup-controls'
 import { CalendarPreview } from './components/calendar-preview'
 import { ProjectPanel } from './components/project-panel'
 import { TaskPanel } from './components/task-panel'
+import { AiProposalDialog } from './components/ai-proposal-dialog'
+import { AiSettingsModal } from './components/ai-settings-modal'
 import { usePlanner } from './use-planner'
 import type { StorageLike } from '../infrastructure/local-planner-repository'
+import type { Task } from '../domain/model'
+import type { TaskInterpretationResult } from '../domain/interpretation'
 
 interface PlannerAppProps {
   createId?: () => string
@@ -26,6 +30,11 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
   )
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [referenceDate] = useState(() => now?.() ?? new Date())
+
+  // AI Modal States
+  const [activeAiTask, setActiveAiTask] = useState<Task | null>(null)
+  const [activeInterpretation, setActiveInterpretation] = useState<TaskInterpretationResult | null>(null)
+  const [showAiSettings, setShowAiSettings] = useState(false)
 
   const selectedProject =
     planner.document.projects.find((project) => project.id === selectedProjectId) ??
@@ -63,6 +72,14 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     })
   }
 
+  const handleTriggerAi = async (task: Task) => {
+    const result = await planner.interpretTask(task.id)
+    if (result) {
+      setActiveAiTask(task)
+      setActiveInterpretation(result)
+    }
+  }
+
   const taskCountByProject = useMemo(() => {
     const map = new Map<string, number>()
     for (const task of planner.document.tasks) {
@@ -70,6 +87,13 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
     }
     return map
   }, [planner.document.tasks])
+
+  const providerLabel =
+    planner.providerMode === 'simulated-ai'
+      ? '✨ AI: Preview Mode'
+      : planner.providerMode === 'gemini-api'
+        ? '🤖 AI: Live Gemini'
+        : '⚡ AI: Local Rules'
 
   return (
     <div className="app-shell">
@@ -107,6 +131,14 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
               ↶ Undo Plan
             </button>
           ) : null}
+          <button
+            className="button button--secondary button--small ai-mode-badge-btn"
+            onClick={() => setShowAiSettings(true)}
+            title="Configure AI Providers and API keys"
+            type="button"
+          >
+            {providerLabel}
+          </button>
         </div>
         <BackupControls className="desktop-backup-actions" onExport={exportBackup} onImport={importBackup} />
       </header>
@@ -147,6 +179,7 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           onImport={importBackup}
           onSelectTaskId={setSelectedTaskId}
           onSetTaskCompletion={planner.setTaskCompletion}
+          onTriggerAi={handleTriggerAi}
           onUpdateTaskConstraints={planner.updateTaskConstraints}
           project={selectedProject}
           selectedTaskId={selectedTaskId}
@@ -154,6 +187,51 @@ export const PlannerApp = ({ createId, now, storage }: PlannerAppProps) => {
           tasks={selectedTasks}
         />
       </main>
+
+      {/* AI Proposal Modal */}
+      {activeAiTask && activeInterpretation ? (
+        <AiProposalDialog
+          interpretation={activeInterpretation}
+          onAcceptDeadline={(dueAt) =>
+            planner.acceptDeadline(activeAiTask.id, dueAt, activeInterpretation.provenance)
+          }
+          onAcceptDependency={(prereqId) =>
+            planner.acceptDependency(activeAiTask.id, prereqId, activeInterpretation.provenance)
+          }
+          onAcceptDuration={(minutes) =>
+            planner.acceptDuration(activeAiTask.id, minutes, activeInterpretation.provenance)
+          }
+          onAcceptSubtasks={(subtasks) =>
+            planner.acceptSubtasks(
+              activeAiTask.projectId,
+              activeAiTask.id,
+              subtasks,
+              activeInterpretation.provenance,
+            )
+          }
+          onClose={() => {
+            setActiveAiTask(null)
+            setActiveInterpretation(null)
+          }}
+          onDismissCapability={(cap) =>
+            planner.dismissProposal(activeAiTask.id, cap, activeInterpretation.provenance)
+          }
+          task={activeAiTask}
+        />
+      ) : null}
+
+      {/* AI Settings Modal */}
+      {showAiSettings ? (
+        <AiSettingsModal
+          currentApiKey={planner.apiKey}
+          currentMode={planner.providerMode}
+          onClose={() => setShowAiSettings(false)}
+          onSave={(m, k) => {
+            planner.setProviderMode(m)
+            planner.setApiKey(k)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

@@ -6,10 +6,10 @@
 
 | Item | Current truth |
 |---|---|
-| State | Milestone I3 complete; preparing Milestone I4 (Optional interpretation). |
-| Active milestone | **I4 — Optional interpretation** |
-| Next bounded outcome | Four bounded capabilities, confirmation, provenance, limits and evaluation. |
-| Evidence required | Feature can fail/disable safely; each capability independently passes measured quality, privacy, reliability, latency and cost. |
+| State | Milestone I4 complete; preparing Milestone I5 (Daily product). |
+| Active milestone | **I5 — Daily product** |
+| Next bounded outcome | Installable offline product, responsive Today/capture and robust recovery. |
+| Evidence required | Offline use, clear tested backup/restore and narrow-screen core flow. |
 | Blocker | None. |
 | Last verified | 2026-09-01 |
 
@@ -69,8 +69,8 @@ The product should feel calm, quick and trustworthy: dominant day/week calendar,
 | **I1 — Manual planner** | Hierarchy, constraints, fixed events and manual calendar sessions. | A persistent offline week; accessible core journeys. (Completed) |
 | **I2 — Reference planner** | Availability, cycle-safe dependencies, allocation, risks, revisions and Undo. | Invariants, determinism, rejected invalid graphs, factual replan and exact Undo. (Completed) |
 | **I3 — Planning quality** | Stability, load balance, missed work and policy presets. | Golden cases improve without correctness loss; interactive representative workload. (Completed) |
-| **I4 Now — Optional interpretation** | Four bounded capabilities, confirmation, provenance, limits and evaluation. | Feature can fail/disable safely; each capability independently passes measured quality, privacy, reliability, latency and cost. |
-| **I5 — Daily product** | Installable offline product, responsive Today/capture and robust recovery. | Offline use, clear tested backup/restore and narrow-screen core flow. |
+| **I4 — Optional interpretation** | Four bounded capabilities, confirmation, provenance, limits and evaluation. | Feature can fail/disable safely; each capability independently passes measured quality, privacy, reliability, latency and cost. (Completed) |
+| **I5 Now — Daily product** | Installable offline product, responsive Today/capture and robust recovery. | Offline use, clear tested backup/restore and narrow-screen core flow. |
 | **I6–I9 Later** | Inbox; first justified remote capability; file workspace; broader PA slices. | Each addition follows `input -> validated command -> deterministic effect -> audit -> Undo`. |
 
 ## Quality and cost gate
